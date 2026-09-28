@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.venv/
+.env
+data/
+artifacts/
+outputs/
+checkpoints/
+logs/
+*.pt
+*.pth
+*.ckpt
+slurm-*.out
+*.err
+.DS_Store
