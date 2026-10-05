@@ -37,7 +37,11 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=project_root / "artifacts" / "slice_manifest.csv",
     )
-    parser.add_argument("--model", default="small_cnn", choices=("small_cnn",))
+    parser.add_argument(
+        "--model",
+        default="small_cnn",
+        choices=("small_cnn", "convnext_tiny"),
+    )
     parser.add_argument("--epochs", type=int, default=30)
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--image-size", type=int, default=224)
