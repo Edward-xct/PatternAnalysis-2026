@@ -13,3 +13,6 @@ logs/
 slurm-*.out
 *.err
 .DS_Store
+*.out
+
+
