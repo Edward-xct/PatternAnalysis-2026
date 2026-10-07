@@ -1,6 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=adni-smallcnn
 #SBATCH --partition=comp3710
+#SBATCH --account=comp3710
 #SBATCH --gres=gpu:1
 #SBATCH --time=01:00:00
 #SBATCH --cpus-per-task=4

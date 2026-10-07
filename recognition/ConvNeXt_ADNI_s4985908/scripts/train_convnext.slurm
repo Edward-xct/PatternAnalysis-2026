@@ -1,6 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=adni-convnext
 #SBATCH --partition=comp3710
+#SBATCH --account=comp3710
 #SBATCH --gres=gpu:1
 #SBATCH --time=04:00:00
 #SBATCH --cpus-per-task=4
