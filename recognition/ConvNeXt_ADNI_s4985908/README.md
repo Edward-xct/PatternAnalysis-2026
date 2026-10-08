@@ -208,36 +208,62 @@ python recognition/ConvNeXt_ADNI_s4985908/evaluate.py \
 
 ## 7. Results
 
-The table below is intentionally left incomplete until both full training jobs
-finish. Smoke-test results are not reported as experimental results.
+Both models were selected by validation macro-F1 and evaluated once on the
+patient-disjoint held-out test set. The table reports all 102 test patients;
+smoke-test results are excluded.
 
 | Patient-level test metric | SmallCNN | ConvNeXt-Tiny |
 |---|---:|---:|
-| Accuracy | TBD | TBD |
-| Macro-F1 | TBD | TBD |
-| AUROC | TBD | TBD |
-| Precision (AD) | TBD | TBD |
-| Recall (AD) | TBD | TBD |
-| Precision (NC) | TBD | TBD |
-| Recall (NC) | TBD | TBD |
-| ECE before calibration | TBD | TBD |
-| ECE after calibration | TBD | TBD |
-| Brier score after calibration | TBD | TBD |
-| Selective accuracy | TBD | TBD |
-| Coverage | TBD | TBD |
-| Referral rate | TBD | TBD |
-| Peak GPU memory | TBD | TBD |
-| Inference latency per patient | TBD | TBD |
+| Accuracy | 0.7549 | **0.7843** |
+| Macro-F1 | 0.6888 | **0.7536** |
+| AUROC | 0.7910 | **0.8081** |
+| Precision (AD) | **0.6818** | 0.6667 |
+| Recall (AD) | 0.4545 | **0.6667** |
+| Precision (NC) | 0.7750 | **0.8406** |
+| Recall (NC) | **0.8986** | 0.8406 |
+| ECE before calibration | **0.0983** | 0.1282 |
+| ECE after calibration | 0.1235 | **0.1077** |
+| Brier score after calibration | 0.1766 | **0.1629** |
+| Selective accuracy | 0.8108 | **0.8235** |
+| Coverage | **0.7255** | 0.6667 |
+| Referral rate | **0.2745** | 0.3333 |
+| Inference time per slice (A100, ms) | **0.5773** | 0.7910 |
 
-The course target is patient-level test accuracy of at least 0.80. If the
-target is not reached, the measured result will still be reported and analysed
-rather than hidden.
+ConvNeXt correctly classified 80 of 102 test patients, compared with 77 for
+SmallCNN. It reduced AD false negatives from 18 to 11 and improved AD recall
+by 21.21 percentage points. The improvement is important for a screening-style
+application, where missed AD cases are particularly undesirable. ConvNeXt also
+improved test macro-F1 by 0.0648 and AUROC by 0.0171, although it required far
+more parameters and slightly higher inference time.
+
+The course target is patient-level test accuracy of at least 0.80. ConvNeXt
+reached 0.7843, corresponding to 80 correct patients; at least 82 of 102 would
+be required to exceed the target. The target is therefore **not claimed as
+met**. This generalisation gap is reported rather than hidden.
+
+Temperature scaling improved ConvNeXt test NLL from 0.6194 to 0.5082, Brier
+score from 0.1738 to 0.1629, and ECE from 0.1282 to 0.1077. In contrast, the
+SmallCNN temperature selected on validation did not transfer to test: its ECE
+increased from 0.0983 to 0.1235. This is evidence that calibration itself can
+overfit a small validation cohort.
+
+The validation-selected ConvNeXt reject option referred 34 test patients and
+accepted 68, giving 0.6667 coverage and 0.8235 selective accuracy. The accepted
+test cases did not retain the validation targets of 0.90 AD sensitivity and
+0.90 NC specificity, which further indicates distribution shift or validation
+overfitting.
+
+Aggregate report figures and a machine-readable summary can be generated from
+the frozen training histories and final evaluation files with
+`report_figures.py`. The script never loads patient identifiers or MRI images,
+so its outputs are suitable for the public repository.
 
 ## 8. Failure-case analysis
 
-After the one-time final test evaluation, 3-5 representative patient-level
-errors will be selected programmatically. The analysis will include both false
-negatives and false positives and will record:
+The final ConvNeXt test evaluation contained 22 errors: 11 false negatives and
+11 false positives. Five high-confidence representative errors were selected
+programmatically for private visual inspection: four false negatives and one
+false positive. The generated table records:
 
 - true and predicted diagnosis;
 - raw and calibrated confidence;
@@ -245,8 +271,18 @@ negatives and false positives and will record:
 - whether the reject option refers the case; and
 - visible acquisition, preprocessing, contrast, or slice-position issues.
 
-Any proposed medical explanation will be labelled as a hypothesis because the
-model and this analysis are not clinical diagnostic tools.
+All five selected errors were confidently accepted rather than referred. For
+example, one AD patient was assigned calibrated P(AD) = 0.038 and one NC
+patient was assigned P(AD) = 0.888. These examples show that a confidence-only
+reject rule cannot catch every confident generalisation error. The montages
+also show substantial appearance changes across sagittal slice positions, so
+future work should consider representations that aggregate slice context more
+explicitly.
+
+The montage files contain course MRI data and subject identifiers. They remain
+inside the Git-ignored `outputs/` directory and are not committed to the public
+repository. Any proposed medical explanation is labelled as a hypothesis
+because the model and this analysis are not clinical diagnostic tools.
 
 ## 9. Verification
 
