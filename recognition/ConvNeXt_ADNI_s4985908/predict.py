@@ -120,7 +120,11 @@ def build_checkpoint_model(
         raise TypeError("Checkpoint config must be a dictionary")
     model_name = str(checkpoint["model_name"])
     dropout = float(config.get("dropout", 0.30))
-    model = build_model(model_name, dropout=dropout)
+    model = build_model(
+        model_name,
+        dropout=dropout,
+        initialize_pretrained=False,
+    )
     model.load_state_dict(checkpoint["model_state_dict"], strict=True)
     model.to(device)
     model.eval()

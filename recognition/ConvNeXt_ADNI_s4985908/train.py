@@ -40,7 +40,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--model",
         default="small_cnn",
-        choices=("small_cnn", "convnext_tiny"),
+        choices=("small_cnn", "convnext_tiny", "convnext_tiny_imagenet"),
     )
     parser.add_argument("--epochs", type=int, default=30)
     parser.add_argument("--batch-size", type=int, default=64)

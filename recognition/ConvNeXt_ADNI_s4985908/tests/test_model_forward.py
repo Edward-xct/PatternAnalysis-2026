@@ -45,6 +45,16 @@ class ModelForwardTests(unittest.TestCase):
         self.assertTrue(torch.isfinite(logits).all().item())
         self.assertEqual(count_trainable_parameters(model), 27821666)
 
+    def test_imagenet_convnext_checkpoint_architecture(self) -> None:
+        model = build_model(
+            "convnext_tiny_imagenet", initialize_pretrained=False
+        ).eval()
+        images = torch.randn(1, 3, 64, 64)
+        with torch.inference_mode():
+            logits = model(images)
+        self.assertEqual(tuple(logits.shape), (1, 2))
+        self.assertTrue(torch.isfinite(logits).all().item())
+
     def test_models_reject_non_rgb_input(self) -> None:
         images = torch.randn(1, 1, 64, 64)
         for model_name in ("small_cnn", "convnext_tiny"):

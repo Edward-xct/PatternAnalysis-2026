@@ -338,6 +338,7 @@ def build_model(
     model_name: str,
     num_classes: int = 2,
     dropout: float = 0.30,
+    initialize_pretrained: bool = True,
 ) -> nn.Module:
     """Construct a model by stable command-line name."""
     normalized_name = model_name.lower().replace("-", "_")
@@ -345,9 +346,29 @@ def build_model(
         return SmallCNN(num_classes=num_classes, dropout=dropout)
     if normalized_name == "convnext_tiny":
         return ConvNeXtTiny(num_classes=num_classes, dropout=dropout)
+    if normalized_name == "convnext_tiny_imagenet":
+        if not 0.0 <= dropout < 1.0:
+            raise ValueError("dropout must be in [0, 1)")
+        from torchvision.models import ConvNeXt_Tiny_Weights, convnext_tiny
+
+        weights = (
+            ConvNeXt_Tiny_Weights.IMAGENET1K_V1
+            if initialize_pretrained
+            else None
+        )
+        model = convnext_tiny(weights=weights)
+        classifier = model.classifier[-1]
+        if not isinstance(classifier, nn.Linear):
+            raise TypeError("Unexpected torchvision ConvNeXt classifier layout")
+        head = nn.Linear(classifier.in_features, num_classes)
+        nn.init.trunc_normal_(head.weight, std=0.02)
+        nn.init.zeros_(head.bias)
+        model.classifier[-1] = nn.Sequential(nn.Dropout(p=dropout), head)
+        return model
     raise ValueError(
         f"Unknown model {model_name!r}. "
-        "Available models: ['small_cnn', 'convnext_tiny']"
+        "Available models: "
+        "['small_cnn', 'convnext_tiny', 'convnext_tiny_imagenet']"
     )
 
 
@@ -401,7 +422,7 @@ def main() -> None:
     parser.add_argument(
         "--model",
         default="small_cnn",
-        choices=("small_cnn", "convnext_tiny"),
+        choices=("small_cnn", "convnext_tiny", "convnext_tiny_imagenet"),
     )
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--image-size", type=int, default=224)
