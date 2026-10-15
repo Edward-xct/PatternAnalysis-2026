@@ -12,7 +12,48 @@ PROJECT_DIR = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = PROJECT_DIR / "artifacts" / "slice_manifest.csv"
 sys.path.insert(0, str(PROJECT_DIR))
 
-from dataset import load_manifest  # noqa: E402
+from dataset import load_manifest, stratified_subject_split  # noqa: E402
+
+
+class StratifiedSubjectSplitTests(unittest.TestCase):
+    """Check the split function itself on synthetic subjects (no data needed).
+
+    The synthetic cohort has the same class sizes as the audited ADNI data:
+    221 AD subjects (label 2) and 459 NC subjects (label 0).
+    """
+
+    @staticmethod
+    def make_labels() -> dict[str, int]:
+        return {
+            f"{index:03d}_S_{index:04d}": (2 if index < 221 else 0)
+            for index in range(680)
+        }
+
+    def test_every_subject_assigned_once_with_expected_sizes(self) -> None:
+        labels = self.make_labels()
+        assignment = stratified_subject_split(labels, 3710, 0.70, 0.15)
+        self.assertEqual(set(assignment), set(labels))
+        counts = Counter((split, labels[subject]) for subject, split in assignment.items())
+        self.assertEqual(
+            dict(counts),
+            {
+                ("train", 2): 155, ("train", 0): 321,
+                ("validation", 2): 33, ("validation", 0): 69,
+                ("test", 2): 33, ("test", 0): 69,
+            },
+        )
+
+    def test_split_is_deterministic_for_a_seed(self) -> None:
+        labels = self.make_labels()
+        first = stratified_subject_split(labels, 3710, 0.70, 0.15)
+        second = stratified_subject_split(dict(reversed(labels.items())), 3710, 0.70, 0.15)
+        other_seed = stratified_subject_split(labels, 2026, 0.70, 0.15)
+        self.assertEqual(first, second)
+        self.assertNotEqual(first, other_seed)
+
+    def test_invalid_ratios_are_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            stratified_subject_split(self.make_labels(), 3710, 0.90, 0.15)
 
 
 @unittest.skipUnless(MANIFEST_PATH.is_file(), "ADNI manifest is not available")

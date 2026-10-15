@@ -2,7 +2,8 @@
 
 The supplied JPEG folders use a scan-level train/test split. This script
 combines both folders, recovers the ADNI subject ID from the metadata JSON,
-and creates deterministic, label-stratified patient-level splits.
+and creates deterministic, label-stratified patient-level splits using
+``dataset.stratified_subject_split``.
 
 Only file names and metadata are inspected. Image pixels are not loaded, so
 the script is safe to run on the Rangpur login node.
@@ -13,11 +14,16 @@ from __future__ import annotations
 import argparse
 import csv
 import json
-import random
 import re
+import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
+
+PROJECT_DIR = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_DIR))
+
+from dataset import stratified_subject_split, validate_split_ratios  # noqa: E402
 
 
 JSON_LABEL_TO_CLASS = {0: "NC", 2: "AD"}
@@ -57,16 +63,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--train-ratio", type=float, default=0.70)
     parser.add_argument("--val-ratio", type=float, default=0.15)
     return parser.parse_args()
-
-
-def validate_ratios(train_ratio: float, val_ratio: float) -> None:
-    """Validate split ratios before touching the dataset."""
-    if not 0.0 < train_ratio < 1.0:
-        raise ValueError("--train-ratio must be between 0 and 1")
-    if not 0.0 < val_ratio < 1.0:
-        raise ValueError("--val-ratio must be between 0 and 1")
-    if train_ratio + val_ratio >= 1.0:
-        raise ValueError("train_ratio + val_ratio must be less than 1")
 
 
 def load_metadata(path: Path) -> dict[str, dict[str, Any]]:
@@ -168,43 +164,6 @@ def validate_subject_labels(records: list[dict[str, Any]]) -> dict[str, int]:
         subject_id: next(iter(labels))
         for subject_id, labels in labels_by_subject.items()
     }
-
-
-def stratified_subject_split(
-    subject_labels: dict[str, int],
-    seed: int,
-    train_ratio: float,
-    val_ratio: float,
-) -> dict[str, str]:
-    """Assign whole subjects to deterministic, label-stratified splits."""
-    subjects_by_label: dict[int, list[str]] = defaultdict(list)
-    for subject_id, json_label in subject_labels.items():
-        subjects_by_label[json_label].append(subject_id)
-
-    assignment: dict[str, str] = {}
-    for json_label in sorted(subjects_by_label):
-        subjects = sorted(subjects_by_label[json_label])
-        random.Random(seed + json_label).shuffle(subjects)
-
-        count = len(subjects)
-        train_end = round(count * train_ratio)
-        val_end = train_end + round(count * val_ratio)
-
-        if train_end == 0 or val_end <= train_end or val_end >= count:
-            raise ValueError(
-                f"Class {json_label} has too few subjects for the requested ratios"
-            )
-
-        for subject_id in subjects[:train_end]:
-            assignment[subject_id] = "train"
-        for subject_id in subjects[train_end:val_end]:
-            assignment[subject_id] = "validation"
-        for subject_id in subjects[val_end:]:
-            assignment[subject_id] = "test"
-
-    if set(assignment) != set(subject_labels):
-        raise AssertionError("Not every subject received exactly one split")
-    return assignment
 
 
 def write_manifests(
@@ -366,7 +325,7 @@ def write_manifests(
 def main() -> None:
     """Run the audit and manifest generation workflow."""
     args = parse_args()
-    validate_ratios(args.train_ratio, args.val_ratio)
+    validate_split_ratios(args.train_ratio, args.val_ratio)
     metadata = load_metadata(args.metadata)
     records = collect_slice_records(args.data_root, metadata)
     subject_labels = validate_subject_labels(records)
