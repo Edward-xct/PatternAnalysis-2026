@@ -23,7 +23,7 @@ import torch
 from torch import Tensor, nn
 
 from dataset import create_dataloader
-from modules import build_model, count_trainable_parameters
+from modules import build_model, count_trainable_parameters, load_model_state_dict
 
 
 CLASS_NAMES = {0: "NC", 1: "AD"}
@@ -125,7 +125,7 @@ def build_checkpoint_model(
         dropout=dropout,
         initialize_pretrained=False,
     )
-    model.load_state_dict(checkpoint["model_state_dict"], strict=True)
+    load_model_state_dict(model, checkpoint["model_state_dict"])
     model.to(device)
     model.eval()
     return model, config

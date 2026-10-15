@@ -5,11 +5,20 @@ baseline and a ConvNeXt-Tiny classifier implemented from the core operations
 described by Liu et al. (CVPR 2022). Keeping both architectures behind the
 same :func:`build_model` interface makes their data and evaluation pipelines
 directly comparable.
+
+The ImageNet-initialised variant uses the *same* :class:`ConvNeXtTiny` class.
+Only the starting weights come from torchvision's
+``ConvNeXt_Tiny_Weights.IMAGENET1K_V1``; they are renamed into this module's
+layer names by :func:`convert_torchvision_convnext_state_dict`. The layer
+naming of torchvision's ConvNeXt implementation was consulted to write that
+mapping (https://github.com/pytorch/vision, ``torchvision/models/convnext.py``).
 """
 
 from __future__ import annotations
 
 import argparse
+import re
+from typing import Mapping
 
 import torch
 from torch import Tensor, nn
@@ -334,36 +343,149 @@ class ConvNeXtTiny(nn.Module):
         return self.classifier(self.forward_features(images))
 
 
+# --- Loading torchvision ImageNet weights into ConvNeXtTiny -----------------
+#
+# torchvision stores ConvNeXt-Tiny as one ``features`` Sequential: index 0 is
+# the stem, odd indices 1/3/5/7 are the four stages, and even indices 2/4/6 are
+# the downsampling layers between stages. Inside a block, ``block.0`` is the
+# depthwise convolution, ``block.2`` the LayerNorm, and ``block.3``/``block.5``
+# the two pointwise linear layers (indices 1, 4 and 6 hold parameter-free
+# Permute and GELU modules). The mapping below renames those tensors to the
+# explicit attribute names used by ConvNeXtTiny above.
+
+_BLOCK_LAYER_NAMES = {
+    "0": "depthwise_conv",
+    "2": "norm",
+    "3": "pointwise_expand",
+    "5": "pointwise_project",
+}
+_KEY_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"features\.0\.([01])\.(weight|bias)"), "stem"),
+    (
+        re.compile(r"features\.([1357])\.(\d+)\.block\.([0235])\.(weight|bias)"),
+        "block",
+    ),
+    (re.compile(r"features\.([1357])\.(\d+)\.layer_scale"), "layer_scale"),
+    (re.compile(r"features\.([246])\.([01])\.(weight|bias)"), "downsample"),
+    (re.compile(r"classifier\.0\.(weight|bias)"), "final_norm"),
+    # Two-class head saved by the earlier torchvision-based training run:
+    # classifier[2] was replaced by Sequential(Dropout, Linear).
+    (re.compile(r"classifier\.2\.1\.(weight|bias)"), "head"),
+    # 1000-class ImageNet head: intentionally discarded.
+    (re.compile(r"classifier\.2\.(weight|bias)"), "imagenet_head"),
+)
+
+
+def _map_torchvision_key(key: str) -> str | None:
+    """Return the ConvNeXtTiny name for one torchvision key, or None to skip."""
+    for pattern, kind in _KEY_PATTERNS:
+        match = pattern.fullmatch(key)
+        if match is None:
+            continue
+        groups = match.groups()
+        if kind == "stem":
+            return f"stem.{groups[0]}.{groups[1]}"
+        if kind == "block":
+            stage = (int(groups[0]) - 1) // 2
+            layer = _BLOCK_LAYER_NAMES[groups[2]]
+            return f"stages.{stage}.{groups[1]}.{layer}.{groups[3]}"
+        if kind == "layer_scale":
+            stage = (int(groups[0]) - 1) // 2
+            return f"stages.{stage}.{groups[1]}.layer_scale"
+        if kind == "downsample":
+            index = (int(groups[0]) - 2) // 2
+            return f"downsample_layers.{index}.{groups[1]}.{groups[2]}"
+        if kind == "final_norm":
+            return f"final_norm.{groups[0]}"
+        if kind == "head":
+            return f"classifier.1.{groups[0]}"
+        return None
+    raise KeyError(f"Unrecognised torchvision ConvNeXt parameter: {key!r}")
+
+
+def is_torchvision_convnext_state_dict(state_dict: Mapping[str, Tensor]) -> bool:
+    """Detect a state dict saved from torchvision's ConvNeXt class."""
+    return any(key.startswith("features.0.0.") for key in state_dict)
+
+
+def convert_torchvision_convnext_state_dict(
+    state_dict: Mapping[str, Tensor],
+) -> tuple[dict[str, Tensor], list[str]]:
+    """Rename torchvision ConvNeXt-Tiny tensors to ConvNeXtTiny names.
+
+    Returns the converted state dict and the list of skipped source keys (the
+    1000-class ImageNet head). Values are not modified except that torchvision
+    stores layer scale as ``(C, 1, 1)`` whereas ConvNeXtTiny applies it in
+    channels-last layout and stores ``(C,)``.
+    """
+    converted: dict[str, Tensor] = {}
+    skipped: list[str] = []
+    for key, value in state_dict.items():
+        new_key = _map_torchvision_key(key)
+        if new_key is None:
+            skipped.append(key)
+            continue
+        if new_key.endswith(".layer_scale"):
+            value = value.reshape(-1)
+        converted[new_key] = value
+    return converted, skipped
+
+
+def load_imagenet_weights(model: ConvNeXtTiny, progress: bool = True) -> ConvNeXtTiny:
+    """Initialise ConvNeXtTiny from torchvision's ImageNet-1K weights.
+
+    Every backbone tensor must be matched; only the freshly initialised
+    two-class classifier is allowed to remain missing.
+    """
+    from torchvision.models import ConvNeXt_Tiny_Weights
+
+    source = ConvNeXt_Tiny_Weights.IMAGENET1K_V1.get_state_dict(progress=progress)
+    converted, _ = convert_torchvision_convnext_state_dict(source)
+    incompatible = model.load_state_dict(converted, strict=False)
+    expected_missing = {"classifier.1.weight", "classifier.1.bias"}
+    if set(incompatible.missing_keys) != expected_missing or incompatible.unexpected_keys:
+        raise RuntimeError(
+            "ImageNet weights did not match ConvNeXtTiny exactly: "
+            f"missing={incompatible.missing_keys}, "
+            f"unexpected={incompatible.unexpected_keys}"
+        )
+    return model
+
+
+def load_model_state_dict(model: nn.Module, state_dict: Mapping[str, Tensor]) -> None:
+    """Strictly load a checkpoint, converting torchvision-format ConvNeXt weights.
+
+    Checkpoints written before the ImageNet model was moved onto ConvNeXtTiny
+    use torchvision parameter names. They are converted here so the frozen
+    checkpoint can be evaluated with this module's own implementation.
+    """
+    if isinstance(model, ConvNeXtTiny) and is_torchvision_convnext_state_dict(state_dict):
+        state_dict, skipped = convert_torchvision_convnext_state_dict(state_dict)
+        if skipped:
+            raise ValueError(f"Checkpoint contains an unexpected ImageNet head: {skipped}")
+    model.load_state_dict(state_dict, strict=True)
+
+
 def build_model(
     model_name: str,
     num_classes: int = 2,
     dropout: float = 0.30,
     initialize_pretrained: bool = True,
 ) -> nn.Module:
-    """Construct a model by stable command-line name."""
+    """Construct a model by stable command-line name.
+
+    ``convnext_tiny`` and ``convnext_tiny_imagenet`` are the same ConvNeXtTiny
+    architecture; they differ only in random versus ImageNet initialisation.
+    """
     normalized_name = model_name.lower().replace("-", "_")
     if normalized_name == "small_cnn":
         return SmallCNN(num_classes=num_classes, dropout=dropout)
     if normalized_name == "convnext_tiny":
         return ConvNeXtTiny(num_classes=num_classes, dropout=dropout)
     if normalized_name == "convnext_tiny_imagenet":
-        if not 0.0 <= dropout < 1.0:
-            raise ValueError("dropout must be in [0, 1)")
-        from torchvision.models import ConvNeXt_Tiny_Weights, convnext_tiny
-
-        weights = (
-            ConvNeXt_Tiny_Weights.IMAGENET1K_V1
-            if initialize_pretrained
-            else None
-        )
-        model = convnext_tiny(weights=weights)
-        classifier = model.classifier[-1]
-        if not isinstance(classifier, nn.Linear):
-            raise TypeError("Unexpected torchvision ConvNeXt classifier layout")
-        head = nn.Linear(classifier.in_features, num_classes)
-        nn.init.trunc_normal_(head.weight, std=0.02)
-        nn.init.zeros_(head.bias)
-        model.classifier[-1] = nn.Sequential(nn.Dropout(p=dropout), head)
+        model = ConvNeXtTiny(num_classes=num_classes, dropout=dropout)
+        if initialize_pretrained:
+            load_imagenet_weights(model)
         return model
     raise ValueError(
         f"Unknown model {model_name!r}. "

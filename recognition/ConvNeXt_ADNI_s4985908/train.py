@@ -20,7 +20,7 @@ import torch
 from torch import Tensor, nn
 
 from dataset import create_dataloader
-from modules import build_model, count_trainable_parameters
+from modules import build_model, count_trainable_parameters, load_model_state_dict
 
 
 CLASS_NAMES = {0: "NC", 1: "AD"}
@@ -457,7 +457,7 @@ def main() -> None:
 
     if args.evaluate_test:
         checkpoint = torch.load(best_checkpoint, map_location=device)
-        model.load_state_dict(checkpoint["model_state_dict"])
+        load_model_state_dict(model, checkpoint["model_state_dict"])
         _, test_loader = create_dataloader(
             manifest_path=args.manifest,
             split="test",
