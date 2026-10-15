@@ -57,6 +57,11 @@ def parse_args() -> argparse.Namespace:
         help="Development smoke-test limit; never allowed for the test split.",
     )
     parser.add_argument(
+        "--plots",
+        action="store_true",
+        help="Save a patient-probability and confusion-matrix figure.",
+    )
+    parser.add_argument(
         "--allow-test",
         action="store_true",
         help="Explicitly unlock held-out test inference after model selection.",
@@ -243,6 +248,81 @@ def collect_predictions(
     return slice_rows, patient_rows, forward_seconds
 
 
+def plot_patient_predictions(
+    patient_rows: list[dict[str, Any]], split: str, output_path: Path
+) -> None:
+    """Visualise patient-level outputs without showing any image or subject ID.
+
+    Left: each patient's P(AD) grouped by true class, with misclassified
+    patients drawn as crosses and the 0.5 decision threshold as a dashed line.
+    Right: the patient-level confusion matrix.
+    """
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    jitter = random.Random(0)
+    figure, (strip_axis, matrix_axis) = plt.subplots(
+        1, 2, figsize=(10, 4), gridspec_kw={"width_ratios": [1.6, 1]},
+        constrained_layout=True,
+    )
+    for target, colour in ((0, "tab:blue"), (1, "tab:orange")):
+        rows = [row for row in patient_rows if row["target"] == target]
+        for correct, marker in ((1, "o"), (0, "x")):
+            subset = [row for row in rows if row["correct"] == correct]
+            strip_axis.scatter(
+                [row["probability_AD"] for row in subset],
+                [target + jitter.uniform(-0.18, 0.18) for _ in subset],
+                c=colour, marker=marker, alpha=0.75, s=28,
+                label=f"true {CLASS_NAMES[target]}, "
+                f"{'correct' if correct else 'wrong'} (n={len(subset)})",
+            )
+    strip_axis.axvline(0.5, color="black", linestyle="--", linewidth=1)
+    strip_axis.set(
+        xlim=(-0.02, 1.02), yticks=[0, 1], yticklabels=["NC", "AD"],
+        xlabel="Patient-level P(AD) (uncalibrated softmax of mean logits)",
+        ylabel="True class", title=f"{split}: patient predictions",
+    )
+    strip_axis.legend(fontsize=8, loc="center left")
+
+    matrix = [[0, 0], [0, 0]]
+    for row in patient_rows:
+        matrix[row["target"]][row["predicted_target"]] += 1
+    matrix_axis.imshow(matrix, cmap="Blues")
+    for true_index in range(2):
+        for predicted_index in range(2):
+            value = matrix[true_index][predicted_index]
+            matrix_axis.text(
+                predicted_index, true_index, str(value), ha="center", va="center",
+                color="white" if value > max(map(max, matrix)) / 2 else "black",
+                fontsize=14,
+            )
+    matrix_axis.set(
+        xticks=[0, 1], yticks=[0, 1], xticklabels=["NC", "AD"],
+        yticklabels=["NC", "AD"], xlabel="Predicted", ylabel="True",
+        title="Confusion matrix",
+    )
+    figure.savefig(output_path, dpi=150)
+    plt.close(figure)
+
+
+def print_patient_summary(patient_rows: list[dict[str, Any]], examples: int = 5) -> None:
+    """Print patient accuracy and a few example rows without subject IDs."""
+    correct = sum(row["correct"] for row in patient_rows)
+    print(
+        f"patient_accuracy={correct}/{len(patient_rows)} "
+        f"({correct / len(patient_rows):.4f})"
+    )
+    print("example patients (target -> predicted, P(AD), scans, slices):")
+    for index, row in enumerate(patient_rows[:examples], start=1):
+        print(
+            f"  patient {index}: {row['target_class']} -> {row['predicted_class']}, "
+            f"P(AD)={row['probability_AD']:.3f}, "
+            f"scans={row['scan_count']}, slices={row['slice_count']}"
+        )
+
+
 def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
     if not rows:
         raise ValueError("Cannot write an empty CSV")
@@ -329,8 +409,13 @@ def main() -> None:
         "slices_processed": len(slice_rows),
         "split": args.split,
     }
+    if args.plots:
+        figure_path = args.output_dir / f"{args.split}_patient_predictions.png"
+        plot_patient_predictions(patient_rows, args.split, figure_path)
+        summary["figure_output"] = str(figure_path)
     write_json(summary_path, summary)
     print(json.dumps(summary, indent=2, sort_keys=True))
+    print_patient_summary(patient_rows)
 
 
 if __name__ == "__main__":

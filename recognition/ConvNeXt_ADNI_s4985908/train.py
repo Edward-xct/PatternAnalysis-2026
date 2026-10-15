@@ -3,6 +3,8 @@
 The optimization unit is a 2D MRI slice, while all primary validation metrics
 are computed after averaging slice logits for each subject. The held-out test
 split is untouched by default and is evaluated only with an explicit flag.
+After every epoch the run writes ``history.json`` and redraws
+``training_curves.png`` (losses and validation metrics) in its output folder.
 """
 
 from __future__ import annotations
@@ -67,7 +69,19 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Evaluate the held-out test split once after training finishes.",
     )
+    parser.add_argument(
+        "--plot-history",
+        type=Path,
+        default=None,
+        metavar="HISTORY_JSON",
+        help=(
+            "Only redraw training_curves.png from an existing history.json "
+            "(saved next to it) and exit without training."
+        ),
+    )
     args = parser.parse_args()
+    if args.plot_history is not None:
+        return args
 
     positive_integer_fields = (
         "epochs",
@@ -329,6 +343,65 @@ def _json_ready(value: Any) -> Any:
     return value
 
 
+def plot_training_curves(history: list[dict[str, Any]], output_path: Path) -> None:
+    """Plot losses and patient-level validation metrics for every epoch so far.
+
+    Called after each epoch, so ``training_curves.png`` always shows the run's
+    progress. The four panels are: slice-level cross-entropy for training and
+    validation, patient-level validation accuracy and macro-F1, patient-level
+    validation AUROC, and the cosine learning-rate schedule. The epoch with the
+    best validation macro-F1 (the saved checkpoint) is marked in every panel.
+    """
+    if not history:
+        return
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    epochs = [int(record["epoch"]) for record in history]
+    validation = [record["validation"] for record in history]
+
+    def series(key: str) -> list[float]:
+        return [
+            float("nan") if metrics.get(key) is None else float(metrics[key])
+            for metrics in validation
+        ]
+
+    macro_f1 = series("macro_f1")
+    best_epoch = epochs[max(range(len(macro_f1)), key=lambda i: macro_f1[i])]
+
+    figure, axes = plt.subplots(2, 2, figsize=(10, 7), constrained_layout=True)
+    loss_axis, metric_axis, auroc_axis, lr_axis = axes.ravel()
+
+    loss_axis.plot(epochs, [float(r["train"]["loss"]) for r in history], label="train")
+    loss_axis.plot(epochs, series("slice_loss"), label="validation")
+    loss_axis.set(title="Slice-level cross-entropy", xlabel="Epoch", ylabel="Loss")
+
+    metric_axis.plot(epochs, series("accuracy"), label="accuracy")
+    metric_axis.plot(epochs, macro_f1, label="macro-F1")
+    metric_axis.set(title="Patient-level validation", xlabel="Epoch", ylabel="Score")
+
+    auroc_axis.plot(epochs, series("auroc"), color="tab:green")
+    auroc_axis.set(title="Patient-level validation AUROC", xlabel="Epoch", ylabel="AUROC")
+
+    lr_axis.plot(epochs, [float(r["learning_rate"]) for r in history], color="tab:gray")
+    lr_axis.set(title="Learning rate", xlabel="Epoch", ylabel="LR")
+
+    from matplotlib.ticker import MaxNLocator
+
+    for axis in axes.ravel():
+        axis.xaxis.set_major_locator(MaxNLocator(integer=True))
+        axis.axvline(best_epoch, color="black", linestyle=":", linewidth=1)
+        axis.grid(alpha=0.3)
+    loss_axis.legend()
+    metric_axis.legend()
+    figure.suptitle(f"Training history (best validation macro-F1 at epoch {best_epoch})")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    figure.savefig(output_path, dpi=150)
+    plt.close(figure)
+
+
 def save_json(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as stream:
@@ -338,6 +411,14 @@ def save_json(path: Path, payload: Any) -> None:
 
 def main() -> None:
     args = parse_args()
+    if args.plot_history is not None:
+        with args.plot_history.open("r", encoding="utf-8") as stream:
+            history_records = json.load(stream)
+        curves_path = args.plot_history.parent / "training_curves.png"
+        plot_training_curves(history_records, curves_path)
+        print(f"Wrote: {curves_path}")
+        return
+
     seed_everything(args.seed)
     device = resolve_device(args.device)
     amp_enabled = device.type == "cuda" and not args.disable_amp
@@ -426,6 +507,7 @@ def main() -> None:
         }
         history.append(epoch_record)
         save_json(args.output_dir / "history.json", history)
+        plot_training_curves(history, args.output_dir / "training_curves.png")
         print(json.dumps(_json_ready(epoch_record), indent=2, sort_keys=True))
 
         macro_f1 = float(validation_metrics["macro_f1"])
