@@ -330,8 +330,25 @@ The final model’s starting weights are torchvision’s `ConvNeXt_Tiny_Weights.
 
 ## Artificial Intelligence Usage Disclosure
 
-I used AI tools as a supporting resource during this assignment. AI was used to help translate and understand the assignment requirements, plan the overall approach, and clarify how different parts of the task could be completed.
+**Tools used.** OpenAI ChatGPT and Codex were used throughout the project. Anthropic Claude was used during the final revision to review the completed code and report.
 
-For the coding component, I used AI to assist with debugging, suggest possible improvements to my code, explain relevant concepts, and provide ideas on how I could improve the model's accuracy. I reviewed and understood the suggestions before making changes to my own work.
+**What AI assisted with.**
 
-For the report, I used AI only to check grammar, identify incorrect or inappropriate wording, and improve unclear sentences. The main ideas, analysis, implementation, results, and final decisions in the assignment were completed by me.
+- *Understanding the task and planning (ChatGPT/Codex):* translating and interpreting the assignment specification, and discussing how to structure the experiments.
+- *Code (ChatGPT/Codex):* debugging errors in the Slurm scripts, data loading and training loop; explaining concepts such as temperature scaling, expected calibration error and reject options; and suggesting ideas for improving accuracy. I wrote the implementation myself.
+- *Code (Claude, final revision):* after reviewing the finished project, Claude drafted the following changes. I applied, tested and committed each one myself:
+  - the torchvision-to-`ConvNeXtTiny` weight-name mapping and checkpoint conversion in `modules.py`, with its two equivalence tests;
+  - moving `stratified_subject_split()` into `dataset.py`, with synthetic split tests;
+  - training-curve plotting in `train.py` and the `--plots` option in `predict.py`;
+  - `scripts/compare_predictions.py`.
+- *Report:* I wrote the report and used ChatGPT to check grammar and wording. During the final revision, Claude drafted the text of Section 5.3 (checkpoint conversion), the test-set-use paragraph and confidence interval in Section 7, and the training-curve and seed-variance notes in Section 6, based on its review of my results. I checked every number in these paragraphs against my result files.
+
+**How AI output was verified.**
+
+- Every change was run on Rangpur before it was committed, and the full unit-test suite (14 tests) passes.
+- Data leakage: the patient split is checked by unit tests and by `validate_patient_level_split()` on every manifest load. After the split function was moved, I regenerated the manifests and confirmed they were byte-identical to the frozen ones.
+- Model correctness: unit tests check output shapes, parameter counts, and that converted torchvision weights produce identical logits in `ConvNeXtTiny`. Re-evaluating the frozen final checkpoint with `ConvNeXtTiny` gave identical predictions for all 102 validation and 102 test patients (maximum logit difference 0), and all 53 test metrics in `evaluation.json` were unchanged.
+- Results: I checked the confusion-matrix counts, accuracies and per-class metrics against the patient-level prediction CSVs.
+- I read every module and can explain what it does and why.
+
+I take full responsibility for all code, results and claims in this submission.
