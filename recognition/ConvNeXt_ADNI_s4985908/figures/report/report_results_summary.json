@@ -1,6 +1,10 @@
 [
   {
+    "best_epoch": 9,
+    "inference_ms_per_slice": 0.5773059043709794,
     "model": "SmallCNN",
+    "parameters": 389410,
+    "peak_training_vram_gb": 1.2695016860961914,
     "temperature": 0.8685950701098635,
     "test_accuracy": 0.7549019607843137,
     "test_auroc": 0.7909530083443127,
@@ -23,7 +27,11 @@
     "validation_macro_f1": 0.813300793166565
   },
   {
-    "model": "ConvNeXt-Tiny",
+    "best_epoch": 16,
+    "inference_ms_per_slice": 0.7910099806587806,
+    "model": "ConvNeXt (scratch)",
+    "parameters": 27821666,
+    "peak_training_vram_gb": 4.117667198181152,
     "temperature": 1.6663454115690284,
     "test_accuracy": 0.7843137254901961,
     "test_auroc": 0.8080808080808081,
@@ -44,5 +52,32 @@
     "validation_accuracy": 0.8333333333333334,
     "validation_auroc": 0.8831796223100571,
     "validation_macro_f1": 0.8080796900940785
+  },
+  {
+    "best_epoch": 9,
+    "inference_ms_per_slice": 0.76911468273415,
+    "model": "ConvNeXt (ImageNet)",
+    "parameters": 27821666,
+    "peak_training_vram_gb": 4.117178916931152,
+    "temperature": 3.2259458159096956,
+    "test_accuracy": 0.8333333333333334,
+    "test_auroc": 0.8546332894158981,
+    "test_brier_calibrated": 0.1314099448805099,
+    "test_coverage": 0.8333333333333334,
+    "test_ece_calibrated": 0.0628048712658772,
+    "test_ece_raw": 0.14362112165739574,
+    "test_macro_f1": 0.7930540637307555,
+    "test_nll_calibrated": 0.4405077146696834,
+    "test_precision_AD": 0.8333333333333334,
+    "test_precision_NC": 0.8333333333333334,
+    "test_recall_AD": 0.6060606060606061,
+    "test_recall_NC": 0.9420289855072463,
+    "test_referral_rate": 0.16666666666666663,
+    "test_selective_accuracy": 0.8588235294117647,
+    "threshold_AD": 0.5,
+    "threshold_NC": 0.13726934023127219,
+    "validation_accuracy": 0.8823529411764706,
+    "validation_auroc": 0.9538866930171278,
+    "validation_macro_f1": 0.8583333333333333
   }
 ]

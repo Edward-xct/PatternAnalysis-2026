@@ -1,8 +1,8 @@
-"""Create publication-ready aggregate figures for the ADNI experiment.
+"""Create public, aggregate figures for the final ADNI report.
 
-This script reads training histories and final evaluation JSON files. It never
-loads MRI images or patient-level prediction rows, so every generated artifact
-is safe to include in the public repository and the final report.
+The script consumes training histories, aggregate evaluation JSON files, and
+aggregate calibration tables. It never loads MRI pixels or patient identifiers,
+so the generated figures are suitable for the public repository.
 """
 
 from __future__ import annotations
@@ -16,24 +16,30 @@ from typing import Any
 import matplotlib.pyplot as plt
 
 
+MODEL_ORDER = ("smallcnn", "scratch", "pretrained")
 MODEL_LABELS = {
     "smallcnn": "SmallCNN",
-    "convnext": "ConvNeXt-Tiny",
+    "scratch": "ConvNeXt (scratch)",
+    "pretrained": "ConvNeXt (ImageNet)",
 }
 MODEL_COLOURS = {
     "smallcnn": "#0072B2",
-    "convnext": "#D55E00",
+    "scratch": "#D55E00",
+    "pretrained": "#009E73",
 }
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Generate aggregate report figures from frozen ADNI results"
+        description="Generate aggregate figures for the final ADNI report"
     )
-    parser.add_argument("--smallcnn-history", type=Path, required=True)
-    parser.add_argument("--convnext-history", type=Path, required=True)
-    parser.add_argument("--smallcnn-evaluation", type=Path, required=True)
-    parser.add_argument("--convnext-evaluation", type=Path, required=True)
+    for key in MODEL_ORDER:
+        parser.add_argument(f"--{key}-history", type=Path, required=True)
+        parser.add_argument(f"--{key}-evaluation", type=Path, required=True)
+        parser.add_argument(f"--{key}-result", type=Path, required=True)
+        parser.add_argument(f"--{key}-inference", type=Path, required=True)
+    parser.add_argument("--pretrained-reliability", type=Path, required=True)
+    parser.add_argument("--pretrained-risk-coverage", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     return parser.parse_args()
 
@@ -45,21 +51,26 @@ def load_json(path: Path) -> Any:
         return json.load(stream)
 
 
+def load_csv(path: Path) -> list[dict[str, str]]:
+    if not path.is_file():
+        raise FileNotFoundError(f"CSV file not found: {path}")
+    with path.open("r", newline="", encoding="utf-8") as stream:
+        return list(csv.DictReader(stream))
+
+
 def validate_history(payload: Any, path: Path) -> list[dict[str, Any]]:
     if not isinstance(payload, list) or not payload:
         raise ValueError(f"Training history must be a non-empty list: {path}")
-    required = {"epoch", "train", "validation"}
     for index, row in enumerate(payload):
-        if not isinstance(row, dict) or not required.issubset(row):
+        required = {"epoch", "train", "validation"}
+        if not isinstance(row, dict) or not required <= row.keys():
             raise ValueError(f"Malformed history row {index} in {path}")
     return payload
 
 
 def validate_evaluation(payload: Any, path: Path) -> dict[str, Any]:
-    if not isinstance(payload, dict):
-        raise ValueError(f"Evaluation must be a JSON object: {path}")
-    if "validation" not in payload or "test" not in payload:
-        raise ValueError(f"Evaluation must contain validation and test: {path}")
+    if not isinstance(payload, dict) or not {"validation", "test"} <= payload.keys():
+        raise ValueError(f"Evaluation must contain validation and test results: {path}")
     for split in ("validation", "test"):
         for section in ("raw", "calibrated", "selective"):
             if section not in payload[split]:
@@ -93,40 +104,36 @@ def save_figure(figure: plt.Figure, output_dir: Path, stem: str) -> None:
 def history_series(
     history: list[dict[str, Any]], section: str, metric: str
 ) -> list[float]:
-    values = []
-    for row in history:
-        value = row[section].get(metric)
-        values.append(float("nan") if value is None else float(value))
-    return values
+    return [
+        float("nan") if row[section].get(metric) is None else float(row[section][metric])
+        for row in history
+    ]
 
 
 def plot_training_curves(
     histories: dict[str, list[dict[str, Any]]], output_dir: Path
 ) -> None:
-    figure, axes = plt.subplots(2, 2, figsize=(10, 7), sharex=True)
+    figure, axes = plt.subplots(2, 2, figsize=(10, 7), sharex=False)
     panels = (
         ("train", "loss", "Training loss", "Cross-entropy loss"),
         ("validation", "slice_loss", "Validation slice loss", "Cross-entropy loss"),
         ("validation", "macro_f1", "Patient-level validation macro-F1", "Macro-F1"),
         ("validation", "auroc", "Patient-level validation AUROC", "AUROC"),
     )
-
     for axis, (section, metric, title, ylabel) in zip(axes.flat, panels):
-        for model_key, history in histories.items():
-            epochs = [int(row["epoch"]) for row in history]
+        for key in MODEL_ORDER:
+            history = histories[key]
             axis.plot(
-                epochs,
+                [int(row["epoch"]) for row in history],
                 history_series(history, section, metric),
-                label=MODEL_LABELS[model_key],
-                color=MODEL_COLOURS[model_key],
+                label=MODEL_LABELS[key],
+                color=MODEL_COLOURS[key],
                 linewidth=1.8,
             )
         axis.set_title(title)
+        axis.set_xlabel("Epoch")
         axis.set_ylabel(ylabel)
         axis.grid(alpha=0.25)
-
-    for axis in axes[-1]:
-        axis.set_xlabel("Epoch")
     axes[0, 0].legend(frameon=False)
     figure.suptitle("Training and validation learning curves", y=1.02)
     save_figure(figure, output_dir, "training_curves")
@@ -143,44 +150,46 @@ def plot_test_comparison(
         ("recall_NC", "NC recall"),
     )
     positions = list(range(len(metrics)))
-    width = 0.36
-    figure, axis = plt.subplots(figsize=(9, 4.8))
-
-    for model_index, model_key in enumerate(("smallcnn", "convnext")):
-        result = evaluations[model_key]["test"]["calibrated"]
-        offsets = [position + (model_index - 0.5) * width for position in positions]
-        values = [float(result[key]) for key, _ in metrics]
+    width = 0.25
+    figure, axis = plt.subplots(figsize=(10, 5.1))
+    for model_index, key in enumerate(MODEL_ORDER):
+        result = evaluations[key]["test"]["calibrated"]
+        values = [float(result[name]) for name, _ in metrics]
+        offsets = [position + (model_index - 1) * width for position in positions]
         bars = axis.bar(
             offsets,
             values,
             width,
-            label=MODEL_LABELS[model_key],
-            color=MODEL_COLOURS[model_key],
+            label=MODEL_LABELS[key],
+            color=MODEL_COLOURS[key],
         )
-        axis.bar_label(bars, labels=[f"{value:.3f}" for value in values], padding=3)
-
+        axis.bar_label(
+            bars,
+            labels=[f"{value:.3f}" for value in values],
+            padding=3,
+            fontsize=8,
+        )
     axis.axhline(0.80, color="#555555", linestyle="--", linewidth=1, label="0.80 target")
     axis.set_xticks(positions, [label for _, label in metrics])
-    axis.set_ylim(0.0, 1.02)
+    axis.set_ylim(0.0, 1.04)
     axis.set_ylabel("Patient-level score")
     axis.set_title("Held-out test performance")
     axis.grid(axis="y", alpha=0.25)
-    axis.legend(frameon=False, ncol=3, loc="lower center")
+    axis.legend(frameon=False, ncol=2, loc="lower center")
     save_figure(figure, output_dir, "test_metric_comparison")
 
 
 def plot_confusion_matrices(
     evaluations: dict[str, dict[str, Any]], output_dir: Path
 ) -> None:
-    figure, axes = plt.subplots(1, 2, figsize=(8.6, 3.8))
+    figure, axes = plt.subplots(1, 3, figsize=(12.5, 3.8))
     maximum = max(
-        int(evaluations[model]["test"]["calibrated"][key])
-        for model in evaluations
-        for key in ("tn", "fp", "fn", "tp")
+        int(evaluations[key]["test"]["calibrated"][metric])
+        for key in MODEL_ORDER
+        for metric in ("tn", "fp", "fn", "tp")
     )
-
-    for axis, model_key in zip(axes, ("smallcnn", "convnext")):
-        result = evaluations[model_key]["test"]["calibrated"]
+    for axis, key in zip(axes, MODEL_ORDER):
+        result = evaluations[key]["test"]["calibrated"]
         matrix = [
             [int(result["tn"]), int(result["fp"])],
             [int(result["fn"]), int(result["tp"])],
@@ -205,8 +214,7 @@ def plot_confusion_matrices(
         axis.set_yticks((0, 1), ("NC", "AD"))
         axis.set_xlabel("Predicted label")
         axis.set_ylabel("True label")
-        axis.set_title(MODEL_LABELS[model_key])
-
+        axis.set_title(MODEL_LABELS[key])
     figure.suptitle("Held-out test confusion matrices", y=1.03)
     save_figure(figure, output_dir, "test_confusion_matrices")
 
@@ -219,23 +227,22 @@ def plot_generalisation_gap(
         ("macro_f1", "Macro-F1"),
         ("auroc", "AUROC"),
     )
-    figure, axes = plt.subplots(1, 2, figsize=(9.6, 4.1), sharey=True)
-
-    for axis, model_key in zip(axes, ("smallcnn", "convnext")):
+    figure, axes = plt.subplots(1, 3, figsize=(13.2, 4.1), sharey=True)
+    for axis, key in zip(axes, MODEL_ORDER):
         positions = list(range(len(metrics)))
         width = 0.36
-        validation = evaluations[model_key]["validation"]["calibrated"]
-        test = evaluations[model_key]["test"]["calibrated"]
-        validation_values = [float(validation[key]) for key, _ in metrics]
-        test_values = [float(test[key]) for key, _ in metrics]
-        bars_validation = axis.bar(
+        validation = evaluations[key]["validation"]["calibrated"]
+        test = evaluations[key]["test"]["calibrated"]
+        validation_values = [float(validation[name]) for name, _ in metrics]
+        test_values = [float(test[name]) for name, _ in metrics]
+        left = axis.bar(
             [position - width / 2 for position in positions],
             validation_values,
             width,
             label="Validation",
             color="#56B4E9",
         )
-        bars_test = axis.bar(
+        right = axis.bar(
             [position + width / 2 for position in positions],
             test_values,
             width,
@@ -243,118 +250,217 @@ def plot_generalisation_gap(
             color="#E69F00",
         )
         axis.bar_label(
-            bars_validation,
+            left,
             labels=[f"{value:.3f}" for value in validation_values],
             padding=2,
             fontsize=8,
         )
         axis.bar_label(
-            bars_test,
+            right,
             labels=[f"{value:.3f}" for value in test_values],
             padding=2,
             fontsize=8,
         )
         axis.set_xticks(positions, [label for _, label in metrics])
         axis.set_ylim(0.0, 1.0)
-        axis.set_title(MODEL_LABELS[model_key])
+        axis.set_title(MODEL_LABELS[key])
         axis.grid(axis="y", alpha=0.25)
-
     axes[0].set_ylabel("Patient-level score")
     axes[0].legend(frameon=False, loc="lower center")
     figure.suptitle("Validation-to-test generalisation gap", y=1.03)
     save_figure(figure, output_dir, "validation_test_gap")
 
 
-def metric_row(model_key: str, evaluation: dict[str, Any]) -> dict[str, Any]:
-    test_raw = evaluation["test"]["raw"]
-    test_calibrated = evaluation["test"]["calibrated"]
-    test_selective = evaluation["test"]["selective"]
+def plot_resource_profile(
+    results: dict[str, dict[str, Any]],
+    inference: dict[str, dict[str, Any]],
+    output_dir: Path,
+) -> None:
+    figure, axes = plt.subplots(1, 3, figsize=(12.6, 4.1))
+    panels = (
+        (
+            [inference[key]["parameters"] / 1e6 for key in MODEL_ORDER],
+            "Parameters (millions)",
+        ),
+        (
+            [results[key]["peak_gpu_vram_gb"] for key in MODEL_ORDER],
+            "Peak training VRAM (GB)",
+        ),
+        (
+            [inference[key]["milliseconds_per_slice"] for key in MODEL_ORDER],
+            "Inference latency (ms/slice)",
+        ),
+    )
+    labels = [MODEL_LABELS[key].replace("ConvNeXt ", "") for key in MODEL_ORDER]
+    colours = [MODEL_COLOURS[key] for key in MODEL_ORDER]
+    for axis, (values, title) in zip(axes, panels):
+        bars = axis.bar(labels, values, color=colours)
+        axis.bar_label(
+            bars,
+            labels=[f"{value:.2f}" for value in values],
+            padding=3,
+            fontsize=8,
+        )
+        axis.set_title(title)
+        axis.tick_params(axis="x", rotation=18)
+        axis.grid(axis="y", alpha=0.25)
+        axis.set_ylim(0, max(values) * 1.18)
+    figure.suptitle("Measured computational profile on Rangpur", y=1.03)
+    save_figure(figure, output_dir, "resource_profile")
+
+
+def plot_reliability(rows: list[dict[str, str]], output_dir: Path) -> None:
+    figure, axis = plt.subplots(figsize=(6.2, 5.2))
+    for variant, colour in (("raw", "#D55E00"), ("calibrated", "#0072B2")):
+        selected = [
+            row
+            for row in rows
+            if row["variant"] == variant and row["count"] != "0"
+        ]
+        axis.plot(
+            [float(row["mean_confidence"]) for row in selected],
+            [float(row["accuracy"]) for row in selected],
+            marker="o",
+            linewidth=1.8,
+            color=colour,
+            label=variant.capitalize(),
+        )
+    axis.plot(
+        (0, 1),
+        (0, 1),
+        linestyle="--",
+        color="#555555",
+        label="Perfect calibration",
+    )
+    axis.set_xlim(0, 1)
+    axis.set_ylim(0, 1)
+    axis.set_xlabel("Mean confidence")
+    axis.set_ylabel("Empirical accuracy")
+    axis.set_title("ImageNet ConvNeXt test reliability")
+    axis.grid(alpha=0.25)
+    axis.legend(frameon=False)
+    save_figure(figure, output_dir, "imagenet_test_reliability")
+
+
+def plot_risk_coverage(rows: list[dict[str, str]], output_dir: Path) -> None:
+    figure, axis = plt.subplots(figsize=(6.2, 5.2))
+    for variant, colour in (("raw", "#D55E00"), ("calibrated", "#0072B2")):
+        selected = [row for row in rows if row["variant"] == variant]
+        axis.plot(
+            [float(row["coverage"]) for row in selected],
+            [float(row["selective_risk"]) for row in selected],
+            linewidth=1.8,
+            color=colour,
+            label=variant.capitalize(),
+        )
+    axis.scatter(
+        [85 / 102],
+        [1 - 73 / 85],
+        color="#009E73",
+        zorder=4,
+        label="Frozen reject rule",
+    )
+    axis.set_xlim(0, 1)
+    axis.set_ylim(bottom=0)
+    axis.set_xlabel("Coverage")
+    axis.set_ylabel("Selective risk (1 - accuracy)")
+    axis.set_title("ImageNet ConvNeXt test risk-coverage")
+    axis.grid(alpha=0.25)
+    axis.legend(frameon=False)
+    save_figure(figure, output_dir, "imagenet_test_risk_coverage")
+
+
+def metric_row(
+    key: str,
+    evaluation: dict[str, Any],
+    result: dict[str, Any],
+    inference: dict[str, Any],
+) -> dict[str, Any]:
     validation = evaluation["validation"]["calibrated"]
+    test_raw = evaluation["test"]["raw"]
+    test = evaluation["test"]["calibrated"]
+    selective = evaluation["test"]["selective"]
     return {
-        "model": MODEL_LABELS[model_key],
+        "model": MODEL_LABELS[key],
         "validation_accuracy": validation["accuracy"],
         "validation_macro_f1": validation["macro_f1"],
         "validation_auroc": validation["auroc"],
-        "test_accuracy": test_calibrated["accuracy"],
-        "test_macro_f1": test_calibrated["macro_f1"],
-        "test_auroc": test_calibrated["auroc"],
-        "test_precision_AD": test_calibrated["precision_AD"],
-        "test_recall_AD": test_calibrated["recall_AD"],
-        "test_precision_NC": test_calibrated["precision_NC"],
-        "test_recall_NC": test_calibrated["recall_NC"],
+        "test_accuracy": test["accuracy"],
+        "test_macro_f1": test["macro_f1"],
+        "test_auroc": test["auroc"],
+        "test_precision_AD": test["precision_AD"],
+        "test_recall_AD": test["recall_AD"],
+        "test_precision_NC": test["precision_NC"],
+        "test_recall_NC": test["recall_NC"],
         "test_ece_raw": test_raw["ece"],
-        "test_ece_calibrated": test_calibrated["ece"],
-        "test_brier_calibrated": test_calibrated["brier"],
-        "test_nll_calibrated": test_calibrated["nll"],
-        "test_selective_accuracy": test_selective["selective_accuracy"],
-        "test_coverage": test_selective["coverage"],
-        "test_referral_rate": test_selective["referral_rate"],
+        "test_ece_calibrated": test["ece"],
+        "test_brier_calibrated": test["brier"],
+        "test_nll_calibrated": test["nll"],
+        "test_selective_accuracy": selective["selective_accuracy"],
+        "test_coverage": selective["coverage"],
+        "test_referral_rate": selective["referral_rate"],
         "temperature": evaluation["calibration"]["temperature"],
         "threshold_NC": evaluation["threshold_selection"]["threshold_CN"],
         "threshold_AD": evaluation["threshold_selection"]["threshold_AD"],
+        "parameters": inference["parameters"],
+        "peak_training_vram_gb": result["peak_gpu_vram_gb"],
+        "inference_ms_per_slice": inference["milliseconds_per_slice"],
+        "best_epoch": inference["checkpoint_epoch"],
     }
 
 
 def write_summary_tables(
-    evaluations: dict[str, dict[str, Any]], output_dir: Path
+    evaluations: dict[str, dict[str, Any]],
+    results: dict[str, dict[str, Any]],
+    inference: dict[str, dict[str, Any]],
+    output_dir: Path,
 ) -> None:
-    rows = [metric_row(key, evaluations[key]) for key in ("smallcnn", "convnext")]
+    rows = [
+        metric_row(key, evaluations[key], results[key], inference[key])
+        for key in MODEL_ORDER
+    ]
     with (output_dir / "final_metrics.csv").open(
         "w", newline="", encoding="utf-8"
     ) as stream:
         writer = csv.DictWriter(
-            stream,
-            fieldnames=list(rows[0]),
-            lineterminator="\n",
+            stream, fieldnames=list(rows[0]), lineterminator="\n"
         )
         writer.writeheader()
         writer.writerows(rows)
-
     headers = (
         "Model",
         "Accuracy",
         "Macro-F1",
         "AUROC",
-        "AD precision",
         "AD recall",
-        "NC precision",
         "NC recall",
         "ECE",
-        "Selective accuracy",
-        "Coverage",
+        "Latency",
     )
-    markdown_rows = []
-    for row in rows:
-        markdown_rows.append(
-            (
-                row["model"],
-                row["test_accuracy"],
-                row["test_macro_f1"],
-                row["test_auroc"],
-                row["test_precision_AD"],
-                row["test_recall_AD"],
-                row["test_precision_NC"],
-                row["test_recall_NC"],
-                row["test_ece_calibrated"],
-                row["test_selective_accuracy"],
-                row["test_coverage"],
-            )
-        )
-
     lines = [
         "| " + " | ".join(headers) + " |",
         "| " + " | ".join(["---"] + ["---:"] * (len(headers) - 1)) + " |",
     ]
-    for row in markdown_rows:
+    for row in rows:
         lines.append(
             "| "
-            + " | ".join([str(row[0])] + [f"{float(value):.4f}" for value in row[1:]])
+            + " | ".join(
+                (
+                    row["model"],
+                    f"{row['test_accuracy']:.4f}",
+                    f"{row['test_macro_f1']:.4f}",
+                    f"{row['test_auroc']:.4f}",
+                    f"{row['test_recall_AD']:.4f}",
+                    f"{row['test_recall_NC']:.4f}",
+                    f"{row['test_ece_calibrated']:.4f}",
+                    f"{row['inference_ms_per_slice']:.4f} ms",
+                )
+            )
             + " |"
         )
     (output_dir / "final_metrics.md").write_text(
         "\n".join(lines) + "\n", encoding="utf-8"
     )
-
     with (output_dir / "report_results_summary.json").open(
         "w", encoding="utf-8"
     ) as stream:
@@ -365,31 +471,37 @@ def main() -> None:
     args = parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
     configure_style()
-
     histories = {
-        "smallcnn": validate_history(
-            load_json(args.smallcnn_history), args.smallcnn_history
-        ),
-        "convnext": validate_history(
-            load_json(args.convnext_history), args.convnext_history
-        ),
+        key: validate_history(
+            load_json(getattr(args, f"{key}_history")),
+            getattr(args, f"{key}_history"),
+        )
+        for key in MODEL_ORDER
     }
     evaluations = {
-        "smallcnn": validate_evaluation(
-            load_json(args.smallcnn_evaluation), args.smallcnn_evaluation
-        ),
-        "convnext": validate_evaluation(
-            load_json(args.convnext_evaluation), args.convnext_evaluation
-        ),
+        key: validate_evaluation(
+            load_json(getattr(args, f"{key}_evaluation")),
+            getattr(args, f"{key}_evaluation"),
+        )
+        for key in MODEL_ORDER
     }
-
+    results = {
+        key: load_json(getattr(args, f"{key}_result")) for key in MODEL_ORDER
+    }
+    inference = {
+        key: load_json(getattr(args, f"{key}_inference")) for key in MODEL_ORDER
+    }
     plot_training_curves(histories, args.output_dir)
     plot_test_comparison(evaluations, args.output_dir)
     plot_confusion_matrices(evaluations, args.output_dir)
     plot_generalisation_gap(evaluations, args.output_dir)
-    write_summary_tables(evaluations, args.output_dir)
-
-    generated = sorted(path.name for path in args.output_dir.iterdir() if path.is_file())
+    plot_resource_profile(results, inference, args.output_dir)
+    plot_reliability(load_csv(args.pretrained_reliability), args.output_dir)
+    plot_risk_coverage(load_csv(args.pretrained_risk_coverage), args.output_dir)
+    write_summary_tables(evaluations, results, inference, args.output_dir)
+    generated = sorted(
+        path.name for path in args.output_dir.iterdir() if path.is_file()
+    )
     print(json.dumps({"output_dir": str(args.output_dir), "files": generated}, indent=2))
 
 
