@@ -173,9 +173,11 @@ def plot_test_comparison(
     axis.set_xticks(positions, [label for _, label in metrics])
     axis.set_ylim(0.0, 1.04)
     axis.set_ylabel("Patient-level score")
-    axis.set_title("Held-out test performance")
+    axis.set_title("Held-out test performance", pad=30)
     axis.grid(axis="y", alpha=0.25)
-    axis.legend(frameon=False, ncol=2, loc="lower center")
+    axis.legend(
+        frameon=False, ncol=4, loc="lower center", bbox_to_anchor=(0.5, 1.0),
+    )
     save_figure(figure, output_dir, "test_metric_comparison")
 
 
@@ -222,6 +224,11 @@ def plot_confusion_matrices(
 def plot_generalisation_gap(
     evaluations: dict[str, dict[str, Any]], output_dir: Path
 ) -> None:
+    """Paired validation/test points so the size of the drop is visible.
+
+    Bars that start at zero would hide a 0.05-0.10 drop, while truncated bars
+    would exaggerate it; paired points on a shared, labelled axis avoid both.
+    """
     metrics = (
         ("accuracy", "Accuracy"),
         ("macro_f1", "Macro-F1"),
@@ -229,44 +236,30 @@ def plot_generalisation_gap(
     )
     figure, axes = plt.subplots(1, 3, figsize=(13.2, 4.1), sharey=True)
     for axis, key in zip(axes, MODEL_ORDER):
-        positions = list(range(len(metrics)))
-        width = 0.36
         validation = evaluations[key]["validation"]["calibrated"]
         test = evaluations[key]["test"]["calibrated"]
-        validation_values = [float(validation[name]) for name, _ in metrics]
-        test_values = [float(test[name]) for name, _ in metrics]
-        left = axis.bar(
-            [position - width / 2 for position in positions],
-            validation_values,
-            width,
-            label="Validation",
-            color="#56B4E9",
-        )
-        right = axis.bar(
-            [position + width / 2 for position in positions],
-            test_values,
-            width,
-            label="Test",
-            color="#E69F00",
-        )
-        axis.bar_label(
-            left,
-            labels=[f"{value:.3f}" for value in validation_values],
-            padding=2,
-            fontsize=8,
-        )
-        axis.bar_label(
-            right,
-            labels=[f"{value:.3f}" for value in test_values],
-            padding=2,
-            fontsize=8,
-        )
-        axis.set_xticks(positions, [label for _, label in metrics])
-        axis.set_ylim(0.0, 1.0)
+        for position, (name, _) in enumerate(metrics):
+            start_value, end_value = float(validation[name]), float(test[name])
+            axis.plot(
+                (position, position), (start_value, end_value),
+                color="#9AA5B1", linewidth=2, zorder=1,
+            )
+            axis.scatter(position, start_value, color="#56B4E9", s=55, zorder=3,
+                         label="Validation" if position == 0 else None)
+            axis.scatter(position, end_value, color="#E69F00", s=55, zorder=3,
+                         label="Test" if position == 0 else None)
+            axis.annotate(f"{start_value:.3f}", (position, start_value), xytext=(9, 0),
+                          textcoords="offset points", va="center", fontsize=8)
+            axis.annotate(f"{end_value:.3f}", (position, end_value), xytext=(9, 0),
+                          textcoords="offset points", va="center", fontsize=8)
+        axis.set_xticks(range(len(metrics)), [label for _, label in metrics])
+        axis.set_xlim(-0.4, len(metrics) - 0.4)
+        axis.set_ylim(0.6, 1.0)
+        axis.axhline(0.80, color="#555555", linestyle="--", linewidth=0.8)
         axis.set_title(MODEL_LABELS[key])
         axis.grid(axis="y", alpha=0.25)
-    axes[0].set_ylabel("Patient-level score")
-    axes[0].legend(frameon=False, loc="lower center")
+    axes[0].set_ylabel("Patient-level score (axis starts at 0.6)")
+    axes[0].legend(frameon=False, loc="lower left")
     figure.suptitle("Validation-to-test generalisation gap", y=1.03)
     save_figure(figure, output_dir, "validation_test_gap")
 
