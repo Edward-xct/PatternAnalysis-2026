@@ -10,7 +10,7 @@ This project develops a patient-level classifier for distinguishing Alzheimer’
 
 ![Pipeline and ConvNeXt-Tiny architecture](figures/report/pipeline_overview.png)
 
-The final model correctly classified **85 of 102 held-out patients (83.33% accuracy; 95% CI 74.9–89.3%)**, meeting the 0.80 target as a point estimate, with **0.7931 macro-F1** and **0.8546 AUROC**. Its AUROC advantage over both baselines is supported by a paired bootstrap. Its accuracy advantage over the scratch ConvNeXt is not statistically significant (McNemar p = 0.30).
+The final model correctly classified **85 of 102 held-out patients (83.33% accuracy; unadjusted 95% CI 74.9–89.3%)**, meeting the 0.80 target as a point estimate, with **0.7931 macro-F1** and **0.8546 AUROC**. Because earlier test results were seen before this model was developed, its test results are exploratory and may carry selection bias of unknown size (Section 7). With that caveat, an unadjusted paired bootstrap favours its AUROC over both baselines, while its accuracy advantage over the scratch ConvNeXt is not significant (McNemar p = 0.30).
 
 On the engineering dilemma, the larger model was **more** overconfident than the baseline before calibration. It assigned confidence of at least 0.9 to 89 of the 102 test patients, and 12 of its 17 errors were made at that level. Temperature scaling (T = 3.23) reduced test ECE from 0.144 to 0.063, the best of the three models. However, no model’s confidence separated its correct from incorrect decisions well (AUROC 0.67–0.70 for all three). The validation-fitted reject option decided 83% of patients automatically at 85.9% accuracy, but it still cleared 8 of the 33 AD patients as normal without review, more than either baseline. The recommendation is therefore to adopt the ImageNet ConvNeXt for research and clinician-facing decision support, but **not** to let it clear patients autonomously.
 
@@ -84,7 +84,7 @@ The resulting subject overlap is zero. Validation is used for checkpoint selecti
 
 ## 4. Preprocessing and patient aggregation
 
-**Example input.** One patient is one to five MRI visits, each contributing 20 consecutive skull-stripped sagittal grayscale JPEG slices. In every scan these slices cover a 19-slice window between original indices 78 and 114, centred on the midline. The slices therefore show the corpus callosum, lateral ventricles, brainstem, cerebellum and medial cortex, while lateral structures such as the hippocampi are largely outside the window. MRI slices are not reproduced in this repository because they are course medical data; Figure 1 shows the input format schematically.
+**Example input.** One patient is one to five MRI visits, each contributing 20 consecutive skull-stripped sagittal grayscale JPEG slices. In every scan these slices cover a 19-slice window between original indices 78 and 114, centred on the midline. The montages show the corpus callosum, lateral ventricles, brainstem, cerebellum and medial cortex. Because the window is narrow and centred on the midline, lateral structures such as the hippocampi are probably only partly represented; this is inferred from the slice indices and the montages and was not checked against an anatomical atlas. MRI slices are not reproduced in this repository because they are course medical data; Figure 1 shows the input format schematically.
 
 `dataset.py` validates the manifest and rejects any patient overlap. Each grayscale slice is resized to 224 × 224, copied into three channels, converted to a tensor, and normalised with ImageNet channel statistics. Training applies conservative random affine augmentation (±5° rotation, 2% translation, 0.95–1.05 scale); validation and test transforms are deterministic.
 
@@ -124,7 +124,7 @@ The model contains **27,821,666 trainable parameters**, about 71 times more than
 
 The final model is the same `ConvNeXtTiny` class from `modules.py` described in Section 5.2; only its starting weights differ. `load_imagenet_weights()` downloads torchvision’s `ConvNeXt_Tiny_Weights.IMAGENET1K_V1`, renames every tensor to this project’s layer names with `convert_torchvision_convnext_state_dict()`, discards the 1,000-class ImageNet head, and keeps a freshly initialised two-class head. Loading is strict: every one of the 180 backbone tensors must match, otherwise training stops. The whole network is then fine-tuned on ADNI, so the architecture and parameter count (27,821,666) are identical to the scratch model.
 
-The first ImageNet run (job 650741) was trained with torchvision’s own ConvNeXt class. Because both implementations have identical layers, its frozen checkpoint was converted into `ConvNeXtTiny` and re-evaluated without retraining. Two unit tests check this: one confirms that every backbone tensor is mapped, and one confirms that a randomly weighted torchvision model and the converted `ConvNeXtTiny` give the same logits. `scripts/compare_predictions.py` confirmed that the re-evaluated validation and test predictions match the original run for every patient (see Section 7). All results reported for the final model therefore come from this project’s own ConvNeXt implementation.
+The first ImageNet run (job 650741) was trained with torchvision’s own ConvNeXt class. Because both implementations have identical layers, its frozen checkpoint was converted into `ConvNeXtTiny` and re-evaluated without retraining. Two unit tests check the conversion. One confirms that every backbone tensor is mapped; the other confirms that a randomly weighted torchvision model and the converted `ConvNeXtTiny` produce the same logits within floating-point tolerance (`rtol = 1e-4`, `atol = 1e-5`). For the real checkpoint, `scripts/compare_predictions.py` found the stored patient logits of all 102 validation and all 102 test patients to be exactly equal to those of the original run, with no change in any predicted class, and all 129 numeric entries of the final `evaluation.json` were exactly equal. These comparison summaries are committed as `figures/report/checkpoint_equivalence_validation.json` and `checkpoint_equivalence_test.json`. All results reported for the final model therefore come from this project’s own ConvNeXt implementation.
 
 ImageNet initialisation provides reusable low-level edge, texture, and shape filters, which makes optimisation more data-efficient than learning all 27.8M parameters from scratch. The pretrained weights are third-party material and are acknowledged in the references.
 
@@ -150,7 +150,7 @@ To estimate seed sensitivity, the scratch ConvNeXt was also trained with seeds 2
 
 The following results include all 102 patient-disjoint test subjects. Smoke-test outputs are excluded.
 
-**Test-set use.** The test split was evaluated in this order. (1) SmallCNN and scratch ConvNeXt were tested once each; both fell below the 0.80 target. (2) A SmallCNN + scratch-ConvNeXt logit ensemble, with weights and threshold fitted on validation, was tested once and reached 0.8039 accuracy (82/102), 0.7591 macro-F1, and 0.8019 AUROC. (3) Because the scratch model was still below target, an ImageNet-initialised ConvNeXt was trained, selected on validation only, and tested once. (4) To verify the implementation change in Section 5.3, the same frozen ImageNet checkpoint was re-run with `ConvNeXtTiny`; this run checked equivalence and did not select a model. No checkpoint, temperature, or threshold was chosen using test data. However, deciding to try another model after seeing the first test results is an indirect form of test-set reuse, so the final 83.33% should be read as mildly optimistic.
+**Test-set use.** The test split was evaluated in this order. (1) SmallCNN and scratch ConvNeXt were tested once each; both fell below the 0.80 target. (2) A SmallCNN + scratch-ConvNeXt logit ensemble, with weights and threshold fitted on validation, was tested once and reached 0.8039 accuracy (82/102), 0.7591 macro-F1, and 0.8019 AUROC. (3) Because the scratch model was still below target, an ImageNet-initialised ConvNeXt was trained, selected on validation only, and tested once. (4) To verify the implementation change in Section 5.3, the same frozen ImageNet checkpoint was re-run with `ConvNeXtTiny`; this run checked equivalence and did not select a model. No checkpoint, temperature, or threshold was chosen using test data. However, deciding to develop another model after seeing earlier test results is a form of adaptive test-set reuse. The final model’s test results are therefore exploratory rather than a clean confirmatory estimate: they may carry selection bias of unknown size, and none of the intervals or tests below corrects for it. The 83.33% figure itself is computed correctly from the 102 test patients.
 
 | Test metric | SmallCNN | ConvNeXt scratch | ConvNeXt ImageNet |
 |---|---:|---:|---:|
@@ -166,7 +166,7 @@ The following results include all 102 patient-disjoint test subjects. Smoke-test
 
 The final model’s confusion matrix is TN = 65, FP = 4, FN = 13, TP = 20. The scratch model retained the highest AD recall, illustrating that model selection depends on the operational cost assigned to false negatives rather than accuracy alone.
 
-**How certain are these differences?** With 102 patients, every metric has a wide interval. Intervals below come from Wilson score intervals and a class-stratified patient bootstrap with 5,000 resamples, in which the three models are always evaluated on the same resampled patients (`uncertainty_analysis.py`).
+**How certain are these differences?** With 102 patients, every metric has a wide interval. Intervals below come from Wilson score intervals and a class-stratified patient bootstrap with 5,000 resamples, in which the three models are always evaluated on the same resampled patients (`uncertainty_analysis.py`). All of them are unadjusted: they treat the test split as if it had been used once and do not account for the adaptive reuse described above.
 
 | Model | Accuracy (95% Wilson CI) | AUROC (95% bootstrap CI) | AD recall (95% Wilson CI) |
 |---|---:|---:|---:|
@@ -179,7 +179,7 @@ The final model’s confusion matrix is TN = 65, FP = 4, FN = 13, TP = 20. The s
 | SmallCNN | +0.078 (+0.010 to +0.147) | 0.057 (11 vs 3 discordant) | +0.064 (+0.009 to +0.119) |
 | ConvNeXt scratch | +0.049 (−0.020 to +0.118) | 0.302 (10 vs 5 discordant) | +0.047 (+0.002 to +0.097) |
 
-The ranking quality (AUROC) of the ImageNet model is better than both baselines, and the bootstrap intervals for the differences exclude zero. The accuracy gain over SmallCNN is borderline (the bootstrap interval excludes zero, but McNemar p = 0.057), and the accuracy gain over the scratch ConvNeXt is within noise. The lower end of the final model’s accuracy interval (74.9%) is below the 0.80 target, so passing the target is a point estimate, not a statistically established guarantee.
+On these unadjusted analyses, the ImageNet model ranks patients better than both baselines: the bootstrap intervals for both AUROC differences exclude zero, the comparison with the scratch ConvNeXt only narrowly. Given the adaptive test reuse, this is evidence of an improvement rather than a confirmed one. The accuracy gain over SmallCNN is borderline (the bootstrap interval excludes zero, but McNemar p = 0.057), and the accuracy gain over the scratch ConvNeXt is within noise. The lower end of the final model’s accuracy interval (74.9%) is below the 0.80 target, so passing the target is a point estimate, not a statistically established guarantee.
 
 ![Validation-to-test gap](figures/report/validation_test_gap.png)
 
@@ -252,9 +252,9 @@ Confidence-based referral is therefore useful but insufficient as a safety mecha
 
 ## 9. Resource profile
 
-Measurements were recorded on Rangpur A100 jobs. Training time is the summed train-plus-validation loop time in each saved history. Inference figures cover full-split forward passes with mixed precision and batch size 64, and exclude data loading and scheduler queue time; per-patient latency multiplies the per-slice time by the 42.5 slices of an average test patient.
+Measurements were recorded on Rangpur A100 jobs. Training time is the summed train-plus-validation loop time in each saved history. Inference figures cover full-split forward passes with mixed precision and batch size 64, and exclude data loading and scheduler queue time. The per-patient figure multiplies the per-slice time by the 42.5 slices of an average test patient. It is therefore an amortised estimate of batched GPU forward time, not the end-to-end response time of a deployed system, which would also include image loading, preprocessing and scheduling.
 
-| Model | Trainable parameters | Peak training VRAM | Peak inference VRAM | Time per epoch | Training loop | Inference ms/slice | Inference ms/patient |
+| Model | Trainable parameters | Peak training VRAM | Peak inference VRAM | Time per epoch | Training loop | Forward ms/slice | Forward ms/patient (amortised) |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | SmallCNN | 0.389M | **1.27 GB** | **0.48 GB** | **31.6 s** | 15.80 min (30 epochs) | **0.577** | **24.6** |
 | ConvNeXt scratch | 27.822M | 4.12 GB | 0.58 GB | 35.3 s | 17.63 min (30 epochs) | 0.791 | 33.7 |
@@ -262,7 +262,7 @@ Measurements were recorded on Rangpur A100 jobs. Training time is the summed tra
 
 ![Resource profile](figures/report/resource_profile.png)
 
-Although ConvNeXt has about 71 times more parameters, an epoch takes almost the same time for all three models (31.6–35.3 s). The training loop is therefore limited by JPEG decoding and augmentation on four CPU workers rather than by GPU compute; the ImageNet run is shorter in total only because it used 20 instead of 30 epochs. The real cost of the larger model is 2.85 GB more training memory and about 8 ms more inference per patient. Both are negligible for a screening workflow and far below the 6 GB feasibility limit.
+Although ConvNeXt has about 71 times more parameters, an epoch takes almost the same time for all three models (31.6–35.3 s). This suggests substantial data-loading overhead (JPEG decoding and augmentation on four CPU workers) rather than GPU compute as the dominant cost. Confirming it would require profiling, or a comparison with more workers or cached tensors, which was not done. The ImageNet run is shorter in total because it used 20 instead of 30 epochs. The measured extra cost of the larger model is 2.85 GB of training memory and about 8 ms of amortised forward time per patient. Both are small relative to the 6 GB feasibility limit and to a clinical reading workflow.
 
 ## 10. Qualitative failure autopsies
 
@@ -276,26 +276,26 @@ The final model made 17 errors: 13 false negatives (AD → NC) and 4 false posit
 | D | AD → NC | 2 / 40; 0 | 0.080 / 0.038 / 0.035 | accepted as NC |
 | E | AD → NC | 1 / 20; 0 | 0.068 / 0.082 / 0.049 | accepted as NC |
 
-**Errors are shared across architectures.** Every selected case was also misclassified by both baselines; only SmallCNN referred Case C instead of accepting it. Across the whole test set, 10 of the final model’s 17 errors were also made by both baselines, 9 of its 13 false negatives were missed by all three models, and only 1 error was unique to the ImageNet model. The failures therefore concentrate in patients that are hard for any 2D slice classifier on this input, rather than reflecting a weakness specific to ConvNeXt.
+**Errors are shared across architectures.** Every selected case was also misclassified by both baselines; only SmallCNN referred Case C instead of accepting it. Across the whole test set, 10 of the final model’s 17 errors were also made by both baselines, 9 of its 13 false negatives were missed by all three models, and only 1 error was unique to the ImageNet model. The failures therefore concentrate in patients that were difficult for all three evaluated models on this input, rather than reflecting a weakness specific to ConvNeXt.
 
 **Failure triggers.** The montages were inspected by a non-radiologist, so the following are image-based engineering hypotheses rather than anatomical findings.
 
-- **Limited field of view (all cases).** Every scan contributes only near-midline sagittal slices (Section 4). The hippocampi, the best-established structural marker of AD, are largely outside this window. The model must rely on ventricles, the corpus callosum and medial cortex, so an AD patient without conspicuous change in those structures can look normal. In Cases A, C, D and E, every single slice of every scan voted NC. These are coherent patient-level misses, not one corrupt slice.
+- **Limited field of view (all cases).** Every scan contributes only near-midline sagittal slices (Section 4). Judging from the slice indices and montages, the hippocampi, the best-established structural marker of AD, are probably only partly represented; this was not verified anatomically. If so, the model must rely mainly on ventricles, the corpus callosum and medial cortex, and an AD patient without conspicuous change in those structures could look normal. In Cases A, C, D and E, every single slice of every scan voted NC. These are coherent patient-level misses, not one corrupt slice.
 - **Normal-ageing confounder (Case B).** The false positive shows relatively large lateral ventricles in the midline slices. Ventricular enlargement also occurs in healthy ageing, so this is a plausible reason for 48 of its 60 slices voting AD.
-- **Intensity artefacts (Cases C and E).** Several slices show uneven brightness: a hazy, brighter band over part of the cortex consistent with a bias field or acquisition difference. Both ConvNeXts stayed confident on Case C while the SmallCNN referred it. This suggests that the larger models extrapolate confidently on intensity-shifted input.
-- **Repeated visits do not help when the signal is absent (Case A).** Four scans and 80 slices all pointed the same wrong way. Averaging more visits reduces noise but cannot recover a cue the input does not contain.
+- **Intensity artefacts (Cases C and E).** Several slices show uneven brightness: a hazy, brighter band over part of the cortex, possibly a bias field or an acquisition difference. This was not measured, and it was not shown to cause the errors. Both ConvNeXts stayed confident on Case C while the SmallCNN referred it, which is compatible with, but does not demonstrate, the larger models extrapolating confidently on intensity-shifted input.
+- **Repeated visits do not fix a systematic miss (Case A).** Four scans and 80 slices all pointed the same wrong way. Averaging more visits reduces random slice-level noise, but it cannot recover a cue that the model fails to detect in every visit.
 
-**Engineering responses.** Use lateral and whole-volume slices or a 3D model so that the medial temporal lobes are seen. Add bias-field correction or intensity augmentation and test robustness to it. Replace equal slice averaging with attention pooling that can report which slices drove a decision. Flag scans with intensity artefacts, or with disagreement between visits, for mandatory review. All five selected cases were accepted rather than referred, which illustrates the dilemma: calibration improves average probability quality but cannot guarantee that any individual confident decision is correct.
+**Engineering responses.** These responses double as tests of the hypotheses above. Use lateral and whole-volume slices or a 3D model so that the medial temporal lobes are certainly included, and check whether these patients are then classified correctly. Add bias-field correction or intensity augmentation and test whether the predictions for Cases C and E change. Replace equal slice averaging with attention pooling that can report which slices drove a decision. Flag scans with intensity artefacts, or with disagreement between visits, for mandatory review. All five selected cases were accepted rather than referred, which illustrates the dilemma: calibration improves average probability quality but cannot guarantee that any individual confident decision is correct.
 
 ## 11. Recommendation to the project manager
 
-**Adopt the ImageNet-initialised ConvNeXt over the SmallCNN baseline for research and decision support.** Its advantages are supported by the evidence:
+**Adopt the ImageNet-initialised ConvNeXt over the SmallCNN baseline for research and decision support.** Its advantages are supported by the available evidence, which is exploratory because of the test-set reuse described in Section 7:
 
-- better ranking of AD versus NC (AUROC +0.064, bootstrap interval excludes zero);
+- better ranking of AD versus NC (AUROC +0.064; the unadjusted bootstrap interval excludes zero);
 - the best calibrated probabilities after temperature scaling (ECE 0.063);
 - the best automation trade-off (83% coverage at 85.9% accuracy, against 73% at 81.1% for SmallCNN).
 
-Its extra cost is 2.85 GB of training memory and about 8 ms per patient at inference, which does not matter operationally. Its accuracy advantage over a randomly initialised ConvNeXt, however, is not statistically established on 102 test patients.
+Its extra cost is 2.85 GB of training memory and about 8 ms of amortised forward time per patient, which is small for this workflow. Its accuracy advantage over a randomly initialised ConvNeXt, however, is not statistically established on 102 test patients.
 
 **Do not let it clear patients without review.** The frozen rule auto-cleared 8 of 33 AD patients, more than either baseline, and 7 errors still carry calibrated confidence of at least 0.9. The model’s confidence is no better than the baseline’s at signalling its own mistakes. The recommended operating policy is:
 
@@ -305,7 +305,7 @@ Its extra cost is 2.85 GB of training memory and about 8 ms per patient at infer
 
 The next experiment should prioritise sensitivity and robustness rather than further test accuracy:
 
-- include lateral slices or a 3D model so that the hippocampi are visible;
+- include lateral slices or a 3D model so that the hippocampi are certainly included;
 - train with a cost-sensitive patient-level objective;
 - recalibrate on more patients;
 - validate on an external site, with subgroup and scanner analysis.
@@ -332,7 +332,7 @@ sbatch recognition/ConvNeXt_ADNI_s4985908/scripts/train_convnext.slurm
 sbatch recognition/ConvNeXt_ADNI_s4985908/scripts/train_convnext_imagenet.slurm
 ```
 
-The latest automated run passed all **fourteen tests**. They cover the split function on a synthetic cohort (sizes, determinism, invalid ratios), patient-disjoint splits on the real manifest, label consistency, 20 slices per scan, data shapes, all three model constructors and forward passes, exact equivalence between torchvision ImageNet weights and the converted `ConvNeXtTiny`, and invalid-input rejection.
+The latest automated run passed all **fourteen tests**. They cover the split function on a synthetic cohort (sizes, determinism, invalid ratios), patient-disjoint splits on the real manifest, label consistency, 20 slices per scan, data shapes, all three model constructors and forward passes, equivalence within floating-point tolerance between a randomly weighted torchvision ConvNeXt and the converted `ConvNeXtTiny`, and invalid-input rejection.
 
 Training curves can also be redrawn from any saved run without retraining:
 
@@ -393,6 +393,8 @@ python $P/uncertainty_analysis.py \
 python $P/scripts/make_pipeline_figure.py --output-dir $P/figures/report
 ```
 
+`scripts/compare_predictions.py` compares two patient-level prediction runs (and optionally two `evaluation.json` files). It reports the largest logit and probability differences in scientific notation, the number of patients with exactly equal stored logits, and any change in predicted class; `--output-json` saves this summary without subject identifiers.
+
 Slurm scripts record job ID, host, Git commit, timestamps, GPU details, and output directory. Seed 3710 is used for the split, the reported primary experiments, and the bootstrap. Raw data, manifests with machine paths, checkpoints, logs, patient prediction files, and private MRI montages are excluded from Git.
 
 ## 13. Repository structure
@@ -433,7 +435,7 @@ The ensemble scripts are retained as documented secondary experiments. The final
 
 ## 14. Limitations and ethics
 
-ADNI is a research cohort and may not represent clinical prevalence, scanner variation, demographics, comorbidities, or external institutions. The 2D model sees only 20 near-midline sagittal slices per scan and discards volumetric context, including most of the medial temporal lobes. Repeated scans are correlated within a patient; dataset diagnosis labels are not pathology ground truth; and one 102-patient test split gives wide statistical uncertainty, as the confidence intervals in Section 7 show. Temperatures and referral thresholds were fitted on only 102 validation patients and did not fully transfer to test. ImageNet features originate from natural images rather than medical volumes. The failure-case observations were made by a non-radiologist. No conclusion in this report establishes clinical validity.
+ADNI is a research cohort and may not represent clinical prevalence, scanner variation, demographics, comorbidities, or external institutions. The 2D model sees only 20 near-midline sagittal slices per scan and discards volumetric context, probably including much of the medial temporal lobes. The final model’s test results are exploratory because the test split was reused adaptively (Section 7), and the reported intervals and tests do not correct for this. Repeated scans are correlated within a patient; dataset diagnosis labels are not pathology ground truth; and one 102-patient test split gives wide statistical uncertainty, as the confidence intervals in Section 7 show. Temperatures and referral thresholds were fitted on only 102 validation patients and did not fully transfer to test. ImageNet features originate from natural images rather than medical volumes. The failure-case observations were made by a non-radiologist. No conclusion in this report establishes clinical validity.
 
 ## 15. References and attribution
 
@@ -474,7 +476,7 @@ The final model’s starting weights are torchvision’s `ConvNeXt_Tiny_Weights.
 
 - Every change was run on Rangpur before it was committed, and the full unit-test suite (14 tests) passes.
 - Data leakage: the patient split is checked by unit tests and by `validate_patient_level_split()` on every manifest load. After the split function was moved, I regenerated the manifests and confirmed they were byte-identical to the frozen ones.
-- Model correctness: unit tests check output shapes, parameter counts, and that converted torchvision weights produce identical logits in `ConvNeXtTiny`. Re-evaluating the frozen final checkpoint with `ConvNeXtTiny` gave identical predictions for all 102 validation and 102 test patients (maximum logit difference 0), and all 53 test metrics in `evaluation.json` were unchanged.
+- Model correctness: unit tests check output shapes, parameter counts, and that converted torchvision weights produce the same logits in `ConvNeXtTiny` within floating-point tolerance. Re-evaluating the frozen final checkpoint with `ConvNeXtTiny` gave stored patient logits exactly equal to the original run for all 102 validation and 102 test patients, and all 129 numeric entries of `evaluation.json` were exactly equal. The comparison summaries are committed in `figures/report/checkpoint_equivalence_*.json`.
 - Analysis: `uncertainty_analysis.py` recomputes accuracy, AUROC and AD recall from the patient CSVs; these match `evaluation.json` exactly, and its outputs were regenerated on Rangpur from the final result folders.
 - Results: I checked the confusion-matrix counts, accuracies and per-class metrics against the patient-level prediction CSVs.
 - I read every module and can explain what it does and why.
