@@ -1,0 +1,327 @@
+{
+  "bootstrap": {
+    "metric_ci95": {
+      "pretrained": {
+        "accuracy": [
+          0.7647058823529411,
+          0.8921568627450981
+        ],
+        "auroc": [
+          0.7685551163812033,
+          0.9292929292929293
+        ],
+        "recall_AD": [
+          0.42424242424242425,
+          0.7575757575757576
+        ]
+      },
+      "scratch": {
+        "accuracy": [
+          0.7058823529411765,
+          0.8627450980392157
+        ],
+        "auroc": [
+          0.7105841018884497,
+          0.893719806763285
+        ],
+        "recall_AD": [
+          0.5151515151515151,
+          0.8181818181818182
+        ]
+      },
+      "smallcnn": {
+        "accuracy": [
+          0.6764705882352942,
+          0.8235294117647058
+        ],
+        "auroc": [
+          0.69433465085639,
+          0.8796662274923145
+        ],
+        "recall_AD": [
+          0.30303030303030304,
+          0.6363636363636364
+        ]
+      }
+    },
+    "paired_difference": {
+      "pretrained_minus_scratch": {
+        "accuracy": {
+          "ci95": [
+            -0.019607843137254943,
+            0.11764705882352944
+          ],
+          "fraction_not_positive": 0.1104
+        },
+        "auroc": {
+          "ci95": [
+            0.002195871761089152,
+            0.0974967061923584
+          ],
+          "fraction_not_positive": 0.0206
+        }
+      },
+      "pretrained_minus_smallcnn": {
+        "accuracy": {
+          "ci95": [
+            0.009803921568627416,
+            0.1470588235294118
+          ],
+          "fraction_not_positive": 0.0164
+        },
+        "auroc": {
+          "ci95": [
+            0.008783487044356608,
+            0.1194554238032498
+          ],
+          "fraction_not_positive": 0.01
+        }
+      }
+    },
+    "resamples": 5000,
+    "seed": 3710
+  },
+  "calibration": {
+    "pretrained": {
+      "calibrated": {
+        "brier": 0.1314099448805099,
+        "ece": 0.0628048712658772,
+        "nll": 0.4405077146696834
+      },
+      "confidence_auroc_for_correctness": 0.701038062283737,
+      "errors": 17,
+      "errors_calibrated_confidence_at_least_0.9": 7,
+      "errors_raw_confidence_at_least_0.9": 12,
+      "mean_confidence_correct": 0.8929787351796422,
+      "mean_confidence_wrong": 0.7972343817377238,
+      "raw": {
+        "brier": 0.1447124417383279,
+        "ece": 0.14362112165739574,
+        "nll": 0.9972594417331924
+      },
+      "raw_accuracy_when_confidence_at_least_0.9": 0.8651685393258427,
+      "raw_patients_confidence_at_least_0.9": 89,
+      "temperature": 3.2259458159096956
+    },
+    "scratch": {
+      "calibrated": {
+        "brier": 0.1629270873593855,
+        "ece": 0.10770736640811196,
+        "nll": 0.5082406809884985
+      },
+      "confidence_auroc_for_correctness": 0.6727272727272727,
+      "errors": 22,
+      "errors_calibrated_confidence_at_least_0.9": 6,
+      "errors_raw_confidence_at_least_0.9": 8,
+      "mean_confidence_correct": 0.8343659563539425,
+      "mean_confidence_wrong": 0.7503431746193416,
+      "raw": {
+        "brier": 0.17376458329610522,
+        "ece": 0.1281585021347728,
+        "nll": 0.6194158800214219
+      },
+      "raw_accuracy_when_confidence_at_least_0.9": 0.8769230769230769,
+      "raw_patients_confidence_at_least_0.9": 65,
+      "temperature": 1.6663454115690284
+    },
+    "smallcnn": {
+      "calibrated": {
+        "brier": 0.17660194688753322,
+        "ece": 0.12346299454714402,
+        "nll": 0.5936256581678787
+      },
+      "confidence_auroc_for_correctness": 0.6903896103896104,
+      "errors": 25,
+      "errors_calibrated_confidence_at_least_0.9": 7,
+      "errors_raw_confidence_at_least_0.9": 5,
+      "mean_confidence_correct": 0.8647615014121878,
+      "mean_confidence_wrong": 0.772859983412334,
+      "raw": {
+        "brier": 0.17341871920972945,
+        "ece": 0.0982567861717175,
+        "nll": 0.5662974021869507
+      },
+      "raw_accuracy_when_confidence_at_least_0.9": 0.8611111111111112,
+      "raw_patients_confidence_at_least_0.9": 36,
+      "temperature": 0.8685950701098635
+    }
+  },
+  "error_overlap": {
+    "errors": {
+      "pretrained": 17,
+      "scratch": 22,
+      "smallcnn": 25
+    },
+    "pretrained_errors_shared_by_both_baselines": 10,
+    "pretrained_errors_unique": 1,
+    "pretrained_false_negatives": 13,
+    "pretrained_false_negatives_missed_by_all_three": 9
+  },
+  "failure_cases": [
+    {
+      "case": "A",
+      "error": "AD -> NC",
+      "pretrained_probability_AD": 0.028564230848707864,
+      "pretrained_triage": "NC",
+      "scratch_probability_AD": 0.044392519759554966,
+      "scratch_triage": "NC",
+      "smallcnn_probability_AD": 0.04201602452457377,
+      "smallcnn_triage": "NC"
+    },
+    {
+      "case": "B",
+      "error": "NC -> AD",
+      "pretrained_probability_AD": 0.7775314758790101,
+      "pretrained_triage": "AD",
+      "scratch_probability_AD": 0.8875436068427021,
+      "scratch_triage": "AD",
+      "smallcnn_probability_AD": 0.8033715290274749,
+      "smallcnn_triage": "AD"
+    },
+    {
+      "case": "C",
+      "error": "AD -> NC",
+      "pretrained_probability_AD": 0.03429878480482287,
+      "pretrained_triage": "NC",
+      "scratch_probability_AD": 0.08200032686835262,
+      "scratch_triage": "NC",
+      "smallcnn_probability_AD": 0.22962408793552666,
+      "smallcnn_triage": "REFER"
+    },
+    {
+      "case": "D",
+      "error": "AD -> NC",
+      "pretrained_probability_AD": 0.034897868603189525,
+      "pretrained_triage": "NC",
+      "scratch_probability_AD": 0.03804344047964031,
+      "scratch_triage": "NC",
+      "smallcnn_probability_AD": 0.08007226188398567,
+      "smallcnn_triage": "NC"
+    },
+    {
+      "case": "E",
+      "error": "AD -> NC",
+      "pretrained_probability_AD": 0.048919365410939476,
+      "pretrained_triage": "NC",
+      "scratch_probability_AD": 0.0824167343580577,
+      "scratch_triage": "NC",
+      "smallcnn_probability_AD": 0.0677320836001091,
+      "smallcnn_triage": "NC"
+    }
+  ],
+  "metrics": {
+    "pretrained": {
+      "accuracy": 0.8333333333333334,
+      "auroc": 0.8546332894158981,
+      "recall_AD": 0.6060606060606061
+    },
+    "scratch": {
+      "accuracy": 0.7843137254901961,
+      "auroc": 0.8080808080808081,
+      "recall_AD": 0.6666666666666666
+    },
+    "smallcnn": {
+      "accuracy": 0.7549019607843137,
+      "auroc": 0.7909530083443127,
+      "recall_AD": 0.45454545454545453
+    }
+  },
+  "patients": 102,
+  "referred_false_negative_probabilities": [
+    0.15030135992702084,
+    0.1635999559430595,
+    0.3288675617116292,
+    0.3629968396879212,
+    0.49602733946800226
+  ],
+  "selective": {
+    "pretrained": {
+      "AD_auto_cleared": 8,
+      "AD_auto_cleared_rate": 0.24242424242424243,
+      "NC_auto_flagged": 4,
+      "NC_auto_flagged_rate": 0.057971014492753624,
+      "coverage": 0.8333333333333334,
+      "errors_referred": 5,
+      "errors_total": 17,
+      "one_sided": true,
+      "referred": 17,
+      "selective_accuracy": 0.8588235294117647,
+      "threshold_AD": 0.5,
+      "threshold_NC": 0.13726934023127219
+    },
+    "scratch": {
+      "AD_auto_cleared": 6,
+      "AD_auto_cleared_rate": 0.18181818181818182,
+      "NC_auto_flagged": 6,
+      "NC_auto_flagged_rate": 0.08695652173913043,
+      "coverage": 0.6666666666666666,
+      "errors_referred": 10,
+      "errors_total": 22,
+      "one_sided": false,
+      "referred": 34,
+      "selective_accuracy": 0.8235294117647058,
+      "threshold_AD": 0.6739868931272147,
+      "threshold_NC": 0.13804974497783837
+    },
+    "smallcnn": {
+      "AD_auto_cleared": 7,
+      "AD_auto_cleared_rate": 0.21212121212121213,
+      "NC_auto_flagged": 7,
+      "NC_auto_flagged_rate": 0.10144927536231885,
+      "coverage": 0.7254901960784313,
+      "errors_referred": 11,
+      "errors_total": 25,
+      "one_sided": true,
+      "referred": 28,
+      "selective_accuracy": 0.8108108108108109,
+      "threshold_AD": 0.5,
+      "threshold_NC": 0.1407274701669419
+    }
+  },
+  "significance": {
+    "mcnemar": {
+      "pretrained_vs_scratch": {
+        "only_baseline_correct": 5,
+        "only_pretrained_correct": 10,
+        "p_value": 0.3017578125
+      },
+      "pretrained_vs_smallcnn": {
+        "only_baseline_correct": 3,
+        "only_pretrained_correct": 11,
+        "p_value": 0.057373046875
+      }
+    },
+    "wilson_ci95": {
+      "pretrained": {
+        "accuracy": [
+          0.7492107842584269,
+          0.8932587173364094
+        ],
+        "recall_AD": [
+          0.4368314280651038,
+          0.7531711776849179
+        ]
+      },
+      "scratch": {
+        "accuracy": [
+          0.6949596365633389,
+          0.8530290559734329
+        ],
+        "recall_AD": [
+          0.4960758179994997,
+          0.8024997053219629
+        ]
+      },
+      "smallcnn": {
+        "accuracy": [
+          0.6631806109217161,
+          0.8281195961802174
+        ],
+        "recall_AD": [
+          0.298426891258915,
+          0.6201434205625044
+        ]
+      }
+    }
+  }
+}
