@@ -1,0 +1,15 @@
+{
+  "candidate": "validation_patient_predictions.csv",
+  "logit_tolerance": 0.05,
+  "passed": true,
+  "predictions": {
+    "candidate_correct": 90,
+    "max_abs_logit_difference": 0.0,
+    "max_abs_probability_difference": 0.0,
+    "patients": 102,
+    "patients_with_exactly_equal_stored_logits": 102,
+    "predicted_class_disagreements": 0,
+    "reference_correct": 90
+  },
+  "reference": "validation_patient_predictions.csv"
+}

@@ -1,0 +1,22 @@
+{
+  "candidate": "test_patient_predictions.csv",
+  "evaluation": {
+    "max_abs_metric_difference": 0.0,
+    "metric_with_largest_difference": "calibration.temperature",
+    "metrics_differing_at_4_decimals": 0,
+    "metrics_exactly_equal": 129,
+    "numeric_metrics_compared": 129
+  },
+  "logit_tolerance": 0.05,
+  "passed": true,
+  "predictions": {
+    "candidate_correct": 85,
+    "max_abs_logit_difference": 0.0,
+    "max_abs_probability_difference": 0.0,
+    "patients": 102,
+    "patients_with_exactly_equal_stored_logits": 102,
+    "predicted_class_disagreements": 0,
+    "reference_correct": 85
+  },
+  "reference": "test_patient_predictions.csv"
+}
