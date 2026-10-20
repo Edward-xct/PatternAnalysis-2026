@@ -1,0 +1,33 @@
+{
+  "run": "convnext-imagenet-seed3710-job650741",
+  "checkpoint_file": "best.pt",
+  "checkpoint_bytes": 334044789,
+  "checkpoint_sha256": "adfe21515a7704584f62b4fe630a2a6dab5c3f44565b43ed06a307108229dc73",
+  "checkpoint_epoch": 9,
+  "training_config": {
+    "model": "convnext_tiny_imagenet",
+    "epochs": 20,
+    "batch_size": 64,
+    "learning_rate": 5e-05,
+    "weight_decay": 0.0001,
+    "dropout": 0.3,
+    "seed": 3710,
+    "image_size": 224,
+    "amp_enabled": true,
+    "num_workers": 4,
+    "disable_balanced_sampling": false,
+    "train_slices": 21620,
+    "validation_slices": 4560,
+    "trainable_parameters": 27821666
+  },
+  "training_job_log": {
+    "available": true,
+    "log_file": "convnext-imagenet-650741.out",
+    "job_id": "650741",
+    "host": "a100-9",
+    "started": "2026-10-11T21:53:21+10:00",
+    "git_commit": "0a2cfd4d37db1cc086c8d48786ad071529998288",
+    "finished": "2026-10-11T22:05:28+10:00"
+  },
+  "note": "Trained with torchvision's ConvNeXt class; the reported results were obtained by converting this frozen checkpoint into modules.ConvNeXtTiny and re-evaluating it (see checkpoint_equivalence_*.json). Retraining with the current code is not expected to reproduce it bit for bit."
+}
