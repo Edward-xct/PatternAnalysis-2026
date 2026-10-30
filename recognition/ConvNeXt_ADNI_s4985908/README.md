@@ -1,6 +1,7 @@
 # Patient-Level Alzheimer’s Disease Classification from ADNI MRI with ConvNeXt
 
-**Student:** s4985908  
+**Student:** Chongtao Xie  
+**Student number:** 49859083  
 **Course:** COMP3710 Pattern Recognition  
 **Project:** ADNI AD-versus-CN classification — Hard difficulty
 
